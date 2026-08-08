@@ -354,6 +354,13 @@ export const AIStudentAnalysis: React.FC<AIStudentAnalysisProps> = ({
 
   const selectedStudent = effectiveStudents.find((s) => s.id === selectedStudentId) || (effectiveStudents.length > 0 ? effectiveStudents[0] : null);
 
+  // Auto-run AI Academic Evaluation when student is selected or tab is mounted
+  useEffect(() => {
+    if (selectedStudent && !analysisResult && !loading) {
+      handleRunAIAnalysis();
+    }
+  }, [selectedStudentId, selectedStudent?.id]);
+
   // Compute stats for current student safely across sessional and internal marks
   const avgSessionalMarks = selectedStudent && selectedStudent.subjects && selectedStudent.subjects.length > 0
     ? Math.round(
@@ -521,8 +528,10 @@ Email: mentor@digboicollege.edu.in`;
       )
     );
 
-    const cleanName = selectedStudent.name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
-    const fileName = `Digboi_College_Academic_Report_${cleanName}_${selectedStudent.rollNo}.pdf`;
+    const sName = selectedStudent?.name || 'Student';
+    const sRoll = selectedStudent?.rollNo || '00';
+    const cleanName = sName.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
+    const fileName = `Digboi_College_Academic_Report_${cleanName}_${sRoll}.pdf`;
 
     try {
       const canvas = await html2canvas(targetElement, {
@@ -660,12 +669,10 @@ Email: mentor@digboicollege.edu.in`;
   const handlePrintReport = async () => {
     if (!analysisResult) {
       await handleRunAIAnalysis();
-      setTimeout(() => {
-        window.print();
-      }, 300);
-    } else {
-      window.print();
     }
+    setTimeout(() => {
+      window.print();
+    }, 150);
   };
 
   const generateFormalWhatsAppNotice = () => {
@@ -747,7 +754,8 @@ Email: mentor@digboicollege.edu.in
     setGeneratingPdf(true);
 
     const formalMessage = generateFormalWhatsAppNotice();
-    const cleanPhone = selectedStudent.parentPhone.replace(/[^0-9]/g, '');
+    const parentPhone = selectedStudent?.parentPhone || '';
+    const cleanPhone = parentPhone.replace(/[^0-9]/g, '');
 
     try {
       const pdfRes = await buildPdfAndFile();
@@ -759,7 +767,7 @@ Email: mentor@digboicollege.edu.in
         if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfRes.pdfFile] })) {
           try {
             await navigator.share({
-              title: `Official Academic Report - ${selectedStudent.name}`,
+              title: `Official Academic Report - ${selectedStudent.name || 'Student'}`,
               text: formalMessage,
               files: [pdfRes.pdfFile],
             });
@@ -777,7 +785,10 @@ Email: mentor@digboicollege.edu.in
     }
 
     const cleanDigits = cleanPhone.slice(-10);
-    const messageWithInstruction = `${formalMessage}\n\n[📄 OFFICIAL PDF REPORT DOCUMENT DOWNLOADED ('Digboi_College_Academic_Report_${selectedStudent.name.replace(/\s+/g, '_')}_${selectedStudent.rollNo}.pdf'). PLEASE ATTACH THE DOWNLOADED PDF FILE TO THIS CHAT.]`;
+    const sName = selectedStudent?.name || 'Student';
+    const sRoll = selectedStudent?.rollNo || '00';
+    const cleanName = sName.replace(/\s+/g, '_');
+    const messageWithInstruction = `${formalMessage}\n\n[📄 OFFICIAL PDF REPORT DOCUMENT DOWNLOADED ('Digboi_College_Academic_Report_${cleanName}_${sRoll}.pdf'). PLEASE ATTACH THE DOWNLOADED PDF FILE TO THIS CHAT.]`;
     const url = cleanDigits
       ? `https://wa.me/91${cleanDigits}?text=${encodeURIComponent(messageWithInstruction)}`
       : `https://wa.me/?text=${encodeURIComponent(messageWithInstruction)}`;
@@ -787,9 +798,10 @@ Email: mentor@digboicollege.edu.in
 
   const getParentWhatsAppUrl = () => {
     if (!selectedStudent || !analysisResult) return '#';
-    const cleanPhone = selectedStudent.parentPhone.replace(/[^0-9]/g, '');
+    const parentPhone = selectedStudent.parentPhone || '';
+    const cleanPhone = parentPhone.replace(/[^0-9]/g, '');
     const message = generateFormalWhatsAppNotice();
-    return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
+    return cleanPhone ? `https://wa.me/91${cleanPhone.slice(-10)}?text=${encodeURIComponent(message)}` : `https://wa.me/?text=${encodeURIComponent(message)}`;
   };
 
   const getMentorWhatsAppUrl = () => {

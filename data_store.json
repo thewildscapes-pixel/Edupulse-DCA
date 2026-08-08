@@ -1,0 +1,107 @@
+{
+  "students": [
+    {
+      "category": "Critical Attention",
+      "createdBy": "Prof. Deborsheegogoi",
+      "creatorEmail": "deborsheegogoi@gmail.com",
+      "department": "Commerce",
+      "email": "",
+      "enrollmentNo": "e1",
+      "guardianName": "ARPITA BORA",
+      "guardianPhone": "9706375002",
+      "id": "s_1786206975699",
+      "lastModified": 1786207047643,
+      "mentorId": "m_deborsheegogoi_gmail_com",
+      "mentorName": "Prof. Deborsheegogoi",
+      "name": "arnold gogoi",
+      "overallAttendance": 67,
+      "overallGpa": 5.5,
+      "program": "FYUGP COMMERCE",
+      "rollNo": "r1",
+      "semester": 1,
+      "subjects": [
+        {
+          "subjectName": "FA",
+          "courseCategory": "Minor",
+          "semester": 1,
+          "sessional1": 6,
+          "sessional2": 3,
+          "assignmentSeminarOthers": 15,
+          "internalMarks": 24,
+          "semesterMarks": 36,
+          "attendancePercent": 45,
+          "enteredBy": "Prof. Deborsheegogoi",
+          "teacherEmail": "deborsheegogoi@gmail.com",
+          "lastUpdated": 1786207047643
+        },
+        {
+          "subjectName": "POM",
+          "courseCategory": "Major",
+          "semester": 1,
+          "sessional1": 3,
+          "sessional2": 5,
+          "assignmentSeminarOthers": 12,
+          "internalMarks": 20,
+          "semesterMarks": 34,
+          "attendancePercent": 88,
+          "enteredBy": "Prof. Deborsheegogoi",
+          "teacherEmail": "deborsheegogoi@gmail.com",
+          "lastUpdated": 1786207009543
+        }
+      ]
+    }
+  ],
+  "mentors": [
+    {
+      "assignedMenteeIds": [],
+      "department": "Physics",
+      "email": "jhandique@digboicollege.edu.in",
+      "id": "m_1",
+      "isPreloaded": true,
+      "name": "Dr. Jayanta Handique",
+      "phone": "+91 94350 11223"
+    },
+    {
+      "assignedMenteeIds": [],
+      "department": "Computer Science",
+      "email": "hdas@digboicollege.edu.in",
+      "id": "m_2",
+      "isPreloaded": true,
+      "name": "Prof. Hemanta Das",
+      "phone": "+91 98540 22334"
+    },
+    {
+      "assignedMenteeIds": [],
+      "department": "Botany",
+      "email": "sdutta@digboicollege.edu.in",
+      "id": "m_3",
+      "isPreloaded": true,
+      "name": "Dr. Sunita Dutta",
+      "phone": "+91 94351 33445"
+    },
+    {
+      "assignedMenteeIds": [],
+      "department": "Commerce",
+      "email": "rbaruah@digboicollege.edu.in",
+      "id": "m_4",
+      "isPreloaded": true,
+      "name": "Prof. Rashmi Baruah",
+      "phone": "+91 98642 44556"
+    },
+    {
+      "assignedMenteeIds": [],
+      "department": "Physics",
+      "email": "deborsheegogoi@gmail.com",
+      "id": "m_deborsheegogoi_gmail_com",
+      "isPreloaded": false,
+      "name": "Prof. Deborsheegogoi",
+      "phone": "9706375001"
+    }
+  ],
+  "teacherUpdates": [],
+  "adminList": [
+    "thewildscapes@gmail.com",
+    "9706375001"
+  ],
+  "blockedLogins": []
+}

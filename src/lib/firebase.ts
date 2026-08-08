@@ -149,12 +149,38 @@ export async function saveAdminListToCloud(adminList: string[]): Promise<void> {
 }
 
 // Data Mutation API
+export async function syncServerData(payload?: {
+  students?: Student[];
+  mentors?: Mentor[];
+  teacherUpdates?: TeacherUpdateLog[];
+  adminList?: string[];
+  blockedLogins?: string[];
+}) {
+  try {
+    if (payload) {
+      const res = await fetch('/api/sync-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      return await res.json();
+    } else {
+      const res = await fetch('/api/sync-data');
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn('Server sync error:', err);
+    return null;
+  }
+}
+
 export async function saveStudentToCloud(student: Student): Promise<void> {
   try {
     const studentWithTimestamp: Student = {
       ...student,
       lastModified: student.lastModified || Date.now(),
     };
+    await syncServerData({ students: [studentWithTimestamp] });
     await setDoc(doc(db, STUDENTS_COL, studentWithTimestamp.id), studentWithTimestamp, { merge: true });
   } catch (err) {
     console.error('Error saving student to cloud:', err);
@@ -163,14 +189,12 @@ export async function saveStudentToCloud(student: Student): Promise<void> {
 
 export async function saveStudentsBatchToCloud(students: Student[]): Promise<void> {
   try {
+    const studentsWithTs = students.map(s => ({ ...s, lastModified: s.lastModified || Date.now() }));
+    await syncServerData({ students: studentsWithTs });
     const batch = writeBatch(db);
-    students.forEach((s) => {
-      const studentWithTimestamp: Student = {
-        ...s,
-        lastModified: s.lastModified || Date.now(),
-      };
+    studentsWithTs.forEach((s) => {
       const ref = doc(db, STUDENTS_COL, s.id);
-      batch.set(ref, studentWithTimestamp, { merge: true });
+      batch.set(ref, s, { merge: true });
     });
     await batch.commit();
   } catch (err) {
@@ -188,6 +212,7 @@ export async function deleteStudentFromCloud(studentId: string): Promise<void> {
 
 export async function saveMentorToCloud(mentor: Mentor): Promise<void> {
   try {
+    await syncServerData({ mentors: [mentor] });
     await setDoc(doc(db, MENTORS_COL, mentor.id), mentor, { merge: true });
   } catch (err) {
     console.error('Error saving mentor to cloud:', err);
@@ -196,6 +221,7 @@ export async function saveMentorToCloud(mentor: Mentor): Promise<void> {
 
 export async function saveMentorsBatchToCloud(mentors: Mentor[]): Promise<void> {
   try {
+    await syncServerData({ mentors });
     const batch = writeBatch(db);
     mentors.forEach((m) => {
       const ref = doc(db, MENTORS_COL, m.id);
@@ -342,13 +368,48 @@ export interface SyncVerificationResult {
 
 export async function verifyAndSyncCloudData(): Promise<SyncVerificationResult> {
   try {
-    const studentsSnap = await getDocs(collection(db, STUDENTS_COL));
-    const mentorsSnap = await getDocs(collection(db, MENTORS_COL));
-    const updatesSnap = await getDocs(collection(db, TEACHER_UPDATES_COL));
+    // 1. Fetch server-side synced data
+    const serverSync = await syncServerData();
+    const serverStudents: Student[] = serverSync?.students || [];
+    const serverMentors: Mentor[] = serverSync?.mentors || [];
+    const serverUpdates: TeacherUpdateLog[] = serverSync?.teacherUpdates || [];
 
-    const cloudStudents: Student[] = studentsSnap.docs.map((d) => d.data() as Student);
-    const cloudMentors: Mentor[] = mentorsSnap.docs.map((d) => d.data() as Mentor);
-    const cloudUpdates: TeacherUpdateLog[] = updatesSnap.docs.map((d) => d.data() as TeacherUpdateLog);
+    // 2. Fetch Firestore data (if available)
+    let cloudStudents: Student[] = [];
+    let cloudMentors: Mentor[] = [];
+    let cloudUpdates: TeacherUpdateLog[] = [];
+    try {
+      const studentsSnap = await getDocs(collection(db, STUDENTS_COL));
+      const mentorsSnap = await getDocs(collection(db, MENTORS_COL));
+      const updatesSnap = await getDocs(collection(db, TEACHER_UPDATES_COL));
+
+      cloudStudents = studentsSnap.docs.map((d) => d.data() as Student);
+      cloudMentors = mentorsSnap.docs.map((d) => d.data() as Mentor);
+      cloudUpdates = updatesSnap.docs.map((d) => d.data() as TeacherUpdateLog);
+    } catch (e) {
+      console.warn('Firestore fetch fallback to server API:', e);
+    }
+
+    // Merge cloud and server pools
+    const combinedStudentsMap = new Map<string, Student>();
+    serverStudents.forEach((s) => combinedStudentsMap.set(s.id, s));
+    cloudStudents.forEach((s) => {
+      const existing = combinedStudentsMap.get(s.id);
+      if (!existing || (s.lastModified || 0) >= (existing.lastModified || 0)) {
+        combinedStudentsMap.set(s.id, s);
+      }
+    });
+    const combinedCloudStudents = Array.from(combinedStudentsMap.values());
+
+    const combinedMentorsMap = new Map<string, Mentor>();
+    serverMentors.forEach((m) => combinedMentorsMap.set(m.id, m));
+    cloudMentors.forEach((m) => combinedMentorsMap.set(m.id, m));
+    const combinedCloudMentors = Array.from(combinedMentorsMap.values());
+
+    const combinedUpdatesMap = new Map<string, TeacherUpdateLog>();
+    serverUpdates.forEach((u) => combinedUpdatesMap.set(u.id, u));
+    cloudUpdates.forEach((u) => combinedUpdatesMap.set(u.id, u));
+    const combinedCloudUpdates = Array.from(combinedUpdatesMap.values());
 
     let localStudents: Student[] = [];
     try {
@@ -356,23 +417,32 @@ export async function verifyAndSyncCloudData(): Promise<SyncVerificationResult> 
       if (saved) localStudents = JSON.parse(saved);
     } catch (e) {}
 
-    const reconciledStudents = reconcileStudentRecords(localStudents, cloudStudents);
+    const reconciledStudents = reconcileStudentRecords(localStudents, combinedCloudStudents);
 
-    if (cloudMentors.length > 0) {
-      localStorage.setItem('edupulse_mentors', JSON.stringify(cloudMentors));
+    // Push local reconciled state to server database to ensure newly added items on this device are saved centrally
+    if (reconciledStudents.length > 0 || combinedCloudMentors.length > 0) {
+      syncServerData({
+        students: reconciledStudents,
+        mentors: combinedCloudMentors,
+        teacherUpdates: combinedCloudUpdates,
+      }).catch(() => {});
+    }
+
+    if (combinedCloudMentors.length > 0) {
+      localStorage.setItem('edupulse_mentors', JSON.stringify(combinedCloudMentors));
     }
     if (reconciledStudents.length > 0) {
       localStorage.setItem('edupulse_students', JSON.stringify(reconciledStudents));
     }
-    if (cloudUpdates.length > 0) {
-      localStorage.setItem('edupulse_teacher_updates', JSON.stringify(cloudUpdates));
+    if (combinedCloudUpdates.length > 0) {
+      localStorage.setItem('edupulse_teacher_updates', JSON.stringify(combinedCloudUpdates));
     }
 
     return {
       students: reconciledStudents,
-      mentors: cloudMentors,
-      teacherUpdates: cloudUpdates,
-      syncedFromCloud: cloudStudents.length > 0 || cloudMentors.length > 0 || cloudUpdates.length > 0,
+      mentors: combinedCloudMentors,
+      teacherUpdates: combinedCloudUpdates,
+      syncedFromCloud: reconciledStudents.length > 0 || combinedCloudMentors.length > 0,
     };
   } catch (err) {
     console.warn('Sync Verification Warning:', err);

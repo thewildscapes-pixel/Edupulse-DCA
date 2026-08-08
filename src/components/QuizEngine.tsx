@@ -277,11 +277,18 @@ export const QuizEngine: React.FC<QuizEngineProps> = ({ students }) => {
 
   // WhatsApp Formatted Text Payload
   const getWhatsAppShareText = () => {
-    let text = `*DIGBOI COLLEGE (AUTONOMOUS)*\n`;
-    text += `*Department of ${selectedSubject.toUpperCase()}*\n`;
-    text += `*Topic:* ${topicInput}\n`;
-    text += `*Level:* ${difficulty}\n`;
-    text += `*Time Allowed:* ${quizTimeLimitMins} Minutes | *Total Marks:* ${targetTotalMarks} Marks (${quizQuestions.length} Questions)\n`;
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://edupulse.digboicollege.edu.in';
+    const interactiveQuizLink = `${origin}/?tab=quiz`;
+
+    let text = `🎓 *DIGBOI COLLEGE (AUTONOMOUS)*\n`;
+    text += `*DEPARTMENT OF ${selectedSubject.toUpperCase()}*\n`;
+    text += `*Continuous Internal Assessment / Sessional Quiz*\n\n`;
+    text += `📌 *Topic:* ${topicInput || 'Department Assessment'}\n`;
+    text += `📊 *Difficulty Level:* ${difficulty}\n`;
+    text += `⏱️ *Time Allowed:* ${quizTimeLimitMins} Minutes | 💯 *Total Marks:* ${targetTotalMarks} Marks (${quizQuestions.length} Questions)\n\n`;
+    text += `🔗 *TAKE INTERACTIVE QUIZ ONLINE HERE:*\n${interactiveQuizLink}\n\n`;
+    text += `------------------------------------\n`;
+    text += `📄 *QUESTION PAPER SUMMARY*\n`;
     text += `------------------------------------\n\n`;
 
     quizQuestions.forEach((q, idx) => {
@@ -293,7 +300,7 @@ export const QuizEngine: React.FC<QuizEngineProps> = ({ students }) => {
     });
 
     text += `------------------------------------\n`;
-    text += `*Instructions:* Complete within ${quizTimeLimitMins} Minutes and submit to your Mentor. Generated via Digboi College EduPulse Portal.`;
+    text += `*Instructions:* Click the interactive link above to take the online test with instant grading or submit written answers to your Faculty Mentor. Generated via Digboi College EduPulse Portal.`;
     return text;
   };
 

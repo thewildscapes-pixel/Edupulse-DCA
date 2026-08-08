@@ -1220,8 +1220,8 @@ export const AdminSuite: React.FC<AdminSuiteProps> = ({
                     </tr>
                   ) : (
                     loginRegistry.map((item) => {
-                      const cleanE = item.email.toLowerCase();
-                      const cleanP = item.phone.replace(/\D/g, '').slice(-10);
+                      const cleanE = (item.email || '').toLowerCase();
+                      const cleanP = (item.phone || '').replace(/\D/g, '').slice(-10);
                       const isBlocked = blockedLogins.includes(cleanE) || blockedLogins.includes(cleanP);
 
                       return (

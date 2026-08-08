@@ -114,7 +114,14 @@ export default function App() {
     }
   }, [userEmail, userPhone]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [activeTab, setActiveTab] = useState<string>('home');
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab');
+      if (tabParam) return tabParam;
+    }
+    return 'home';
+  });
   const [isAddMenteeOpen, setIsAddMenteeOpen] = useState<boolean>(false);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState<boolean>(false);
   const [editingMentor, setEditingMentor] = useState<Mentor | null>(null);
@@ -325,8 +332,44 @@ export default function App() {
       }
     });
 
+    // 3. Periodic background sync and window focus/visibility listeners for guaranteed cross-device sync
+    const performCloudSync = async () => {
+      try {
+        const syncResult = await verifyAndSyncCloudData();
+        if (syncResult.students && syncResult.students.length > 0) {
+          setStudents((prev) => {
+            const merged = reconcileStudentRecords(prev, syncResult.students);
+            localStorage.setItem('edupulse_students', JSON.stringify(merged));
+            return merged;
+          });
+        }
+        if (syncResult.mentors && syncResult.mentors.length > 0) {
+          setMentors(syncResult.mentors);
+          localStorage.setItem('edupulse_mentors', JSON.stringify(syncResult.mentors));
+        }
+        if (syncResult.teacherUpdates && syncResult.teacherUpdates.length > 0) {
+          setTeacherUpdates(syncResult.teacherUpdates);
+          localStorage.setItem('edupulse_teacher_updates', JSON.stringify(syncResult.teacherUpdates));
+        }
+      } catch (e) {}
+    };
+
+    const syncInterval = setInterval(performCloudSync, 3000);
+
+    const handleFocusOrVisible = () => {
+      if (document.visibilityState === 'visible') {
+        performCloudSync();
+      }
+    };
+
+    window.addEventListener('focus', handleFocusOrVisible);
+    document.addEventListener('visibilitychange', handleFocusOrVisible);
+
     return () => {
       isMounted = false;
+      clearInterval(syncInterval);
+      window.removeEventListener('focus', handleFocusOrVisible);
+      document.removeEventListener('visibilitychange', handleFocusOrVisible);
       unsubStudents();
       unsubMentors();
       unsubUpdates();

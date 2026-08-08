@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
@@ -12,25 +13,125 @@ async function startServer() {
 
   app.use(express.json());
 
-  // Initialize Google GenAI
-  const apiKey = process.env.GEMINI_API_KEY;
-  const ai = apiKey
-    ? new GoogleGenAI({
-        apiKey,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          },
+  // Helper to dynamically obtain Google GenAI client
+  function getGenAIClient() {
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) return null;
+    return new GoogleGenAI({
+      apiKey: key,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
         },
-      })
-    : null;
+      },
+    });
+  }
 
   // 1. Health check endpoint
   app.get('/api/health', (_req, res) => {
+    const key = process.env.GEMINI_API_KEY;
     res.json({
       status: 'ok',
-      hasApiKey: Boolean(apiKey),
+      hasApiKey: Boolean(key),
       timestamp: new Date().toISOString()
+    });
+  });
+
+  // Cross-device persistent cloud synchronization endpoints
+  const DATA_FILE = path.join(process.cwd(), 'data_store.json');
+
+  function loadDataStore() {
+    try {
+      if (fs.existsSync(DATA_FILE)) {
+        const raw = fs.readFileSync(DATA_FILE, 'utf-8');
+        return JSON.parse(raw);
+      }
+    } catch (e) {
+      console.warn('Failed to load data_store.json', e);
+    }
+    return null;
+  }
+
+  function saveDataStore(data: any) {
+    try {
+      fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
+    } catch (e) {
+      console.warn('Failed to save data_store.json', e);
+    }
+  }
+
+  const initialStore = loadDataStore();
+
+  let cloudDbStudents: any[] = initialStore?.students || [];
+  let cloudDbMentors: any[] = initialStore?.mentors || [];
+  let cloudDbTeacherUpdates: any[] = initialStore?.teacherUpdates || [];
+  let cloudDbAdminList: string[] = initialStore?.adminList || ['thewildscapes@gmail.com', '9706375001'];
+  let cloudDbBlockedLogins: string[] = initialStore?.blockedLogins || [];
+
+  app.get('/api/sync-data', (_req, res) => {
+    res.json({
+      students: cloudDbStudents,
+      mentors: cloudDbMentors,
+      teacherUpdates: cloudDbTeacherUpdates,
+      adminList: cloudDbAdminList,
+      blockedLogins: cloudDbBlockedLogins,
+      timestamp: Date.now(),
+    });
+  });
+
+  app.post('/api/sync-data', (req, res) => {
+    const { students, mentors, teacherUpdates, adminList, blockedLogins } = req.body;
+
+    if (Array.isArray(students)) {
+      const studentMap = new Map();
+      cloudDbStudents.forEach((s) => studentMap.set(s.id, s));
+      students.forEach((s) => {
+        const existing = studentMap.get(s.id);
+        if (!existing || (s.lastModified || 0) >= (existing.lastModified || 0)) {
+          studentMap.set(s.id, s);
+        }
+      });
+      cloudDbStudents = Array.from(studentMap.values());
+    }
+
+    if (Array.isArray(mentors)) {
+      const mentorMap = new Map();
+      cloudDbMentors.forEach((m) => mentorMap.set(m.id, m));
+      mentors.forEach((m) => mentorMap.set(m.id, m));
+      cloudDbMentors = Array.from(mentorMap.values());
+    }
+
+    if (Array.isArray(teacherUpdates)) {
+      const updateMap = new Map();
+      cloudDbTeacherUpdates.forEach((u) => updateMap.set(u.id, u));
+      teacherUpdates.forEach((u) => updateMap.set(u.id, u));
+      cloudDbTeacherUpdates = Array.from(updateMap.values());
+    }
+
+    if (Array.isArray(adminList)) {
+      cloudDbAdminList = Array.from(new Set([...cloudDbAdminList, ...adminList]));
+    }
+
+    if (Array.isArray(blockedLogins)) {
+      cloudDbBlockedLogins = Array.from(new Set([...cloudDbBlockedLogins, ...blockedLogins]));
+    }
+
+    saveDataStore({
+      students: cloudDbStudents,
+      mentors: cloudDbMentors,
+      teacherUpdates: cloudDbTeacherUpdates,
+      adminList: cloudDbAdminList,
+      blockedLogins: cloudDbBlockedLogins,
+    });
+
+    res.json({
+      success: true,
+      students: cloudDbStudents,
+      mentors: cloudDbMentors,
+      teacherUpdates: cloudDbTeacherUpdates,
+      adminList: cloudDbAdminList,
+      blockedLogins: cloudDbBlockedLogins,
+      timestamp: Date.now(),
     });
   });
 
@@ -42,6 +143,8 @@ async function startServer() {
       if (!student) {
         return res.status(400).json({ error: 'Student details are required' });
       }
+
+      const ai = getGenAIClient();
 
       if (!ai) {
         // Return structured fallback if API key is not configured
@@ -115,16 +218,34 @@ Return ONLY a JSON object with this exact structure:
 }
 `;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.6-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          temperature: 0.2,
+      let responseText = '';
+      try {
+        const response = await ai.models.generateContent({
+          model: 'gemini-3.6-flash',
+          contents: prompt,
+          config: {
+            responseMimeType: 'application/json',
+            temperature: 0.2,
+          }
+        });
+        responseText = response.text || '';
+      } catch (e1) {
+        console.warn('gemini-3.6-flash failed in analyze-student, trying gemini-2.5-flash:', e1);
+        try {
+          const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
+              responseMimeType: 'application/json',
+              temperature: 0.2,
+            }
+          });
+          responseText = response.text || '';
+        } catch (e2) {
+          console.warn('gemini-2.5-flash failed in analyze-student:', e2);
         }
-      });
+      }
 
-      const responseText = response.text;
       if (!responseText) {
         throw new Error('Empty response from AI model');
       }
@@ -188,6 +309,8 @@ Return ONLY a JSON object with this exact structure:
 
       const qCount = Math.max(1, Math.min(25, Number(questionCount) || 5));
       const qMarks = Math.max(1, Number(marksPerQuestion) || 1);
+
+      const ai = getGenAIClient();
 
       if (!ai) {
         // Dynamic topic-tailored fallback if Gemini key is missing
@@ -286,6 +409,8 @@ Return ONLY a valid JSON array of question objects matching this exact structure
   app.post('/api/generate-whatsapp-msg', async (req, res) => {
     try {
       const { studentName, rollNo, department, attendance, sessionalAvg, customNote, mentorName } = req.body;
+
+      const ai = getGenAIClient();
 
       if (!ai) {
         return res.json({
