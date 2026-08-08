@@ -1,0 +1,47 @@
+{
+  "entities": {
+    "students": {
+      "title": "Students",
+      "description": "Student records, academic performance, and mentorship notices",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "rollNo": { "type": "string" },
+        "department": { "type": "string" },
+        "semester": { "type": "number" },
+        "mentorId": { "type": "string" }
+      },
+      "required": ["id", "name", "rollNo"]
+    },
+    "mentors": {
+      "title": "Mentors",
+      "description": "Faculty and mentor profile records",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" }
+      },
+      "required": ["id", "name", "email"]
+    },
+    "teacherUpdates": {
+      "title": "Teacher Updates",
+      "description": "Academic diagnostic notices and assessment updates",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "readByMentor": { "type": "boolean" }
+      },
+      "required": ["id"]
+    },
+    "blockedLogins": {
+      "title": "Blocked Logins",
+      "description": "Restricted email or phone accounts",
+      "properties": {
+        "id": { "type": "string" },
+        "list": { "type": "array" }
+      },
+      "required": ["id"]
+    }
+  }
+}

@@ -1,0 +1,386 @@
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import {
+  getFirestore,
+  collection,
+  doc,
+  setDoc,
+  deleteDoc,
+  onSnapshot,
+  getDocs,
+  writeBatch,
+} from 'firebase/firestore';
+import { Student, Mentor, TeacherUpdateLog, FacultyLoginRecord } from '../types';
+
+// Firebase configuration from environment or fallback
+const metaEnv = (import.meta as any).env || {};
+const firebaseConfig = {
+  apiKey: metaEnv.VITE_FIREBASE_API_KEY || 'AIzaSyPlaceholderKeyForDigboiCollegeDev',
+  authDomain: metaEnv.VITE_FIREBASE_AUTH_DOMAIN || 'edupulse-digboi.firebaseapp.com',
+  projectId: metaEnv.VITE_FIREBASE_PROJECT_ID || 'ai-studio-edupulsedigboico-789b0e2f-ea2a-4f8b-916c-a496b1edf07f',
+  storageBucket: metaEnv.VITE_FIREBASE_STORAGE_BUCKET || 'edupulse-digboi.appspot.com',
+  messagingSenderId: metaEnv.VITE_FIREBASE_MESSAGING_SENDER_ID || '298200574086',
+  appId: metaEnv.VITE_FIREBASE_APP_ID || '1:298200574086:web:0000000000000000000000',
+};
+
+// Initialize Firebase
+const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+export const db = getFirestore(app);
+
+// Collection References
+const STUDENTS_COL = 'students';
+const MENTORS_COL = 'mentors';
+const TEACHER_UPDATES_COL = 'teacher_updates';
+const LOGIN_REGISTRY_COL = 'login_registry';
+const SETTINGS_COL = 'settings';
+
+// Real-time Subscriptions
+export function subscribeStudents(
+  onUpdate: (students: Student[]) => void,
+  onError?: (err: any) => void
+) {
+  try {
+    return onSnapshot(
+      collection(db, STUDENTS_COL),
+      (snapshot) => {
+        const studentsList: Student[] = snapshot.docs.map((d) => d.data() as Student);
+        onUpdate(studentsList);
+      },
+      (error) => {
+        console.warn('Firestore students subscription error:', error);
+        if (onError) onError(error);
+      }
+    );
+  } catch (err) {
+    if (onError) onError(err);
+    return () => {};
+  }
+}
+
+export function subscribeMentors(
+  onUpdate: (mentors: Mentor[]) => void,
+  onError?: (err: any) => void
+) {
+  try {
+    return onSnapshot(
+      collection(db, MENTORS_COL),
+      (snapshot) => {
+        const mentorsList: Mentor[] = snapshot.docs.map((d) => d.data() as Mentor);
+        onUpdate(mentorsList);
+      },
+      (error) => {
+        console.warn('Firestore mentors subscription error:', error);
+        if (onError) onError(error);
+      }
+    );
+  } catch (err) {
+    if (onError) onError(err);
+    return () => {};
+  }
+}
+
+export function subscribeTeacherUpdates(onUpdate: (updates: TeacherUpdateLog[]) => void) {
+  try {
+    return onSnapshot(
+      collection(db, TEACHER_UPDATES_COL),
+      (snapshot) => {
+        const updatesList = snapshot.docs.map((d) => d.data() as TeacherUpdateLog);
+        onUpdate(updatesList);
+      },
+      (error) => console.warn('Teacher updates snapshot error:', error)
+    );
+  } catch (e) {
+    return () => {};
+  }
+}
+
+export function subscribeBlockedLogins(onUpdate: (blockedList: string[]) => void) {
+  try {
+    return onSnapshot(
+      doc(db, SETTINGS_COL, 'blocked_logins'),
+      (snapshot) => {
+        if (snapshot.exists()) {
+          onUpdate(snapshot.data().list || []);
+        }
+      },
+      (error) => console.warn('Blocked logins snapshot error:', error)
+    );
+  } catch (e) {
+    return () => {};
+  }
+}
+
+export function subscribeLoginRegistry(onUpdate: (logs: FacultyLoginRecord[]) => void) {
+  try {
+    return onSnapshot(
+      collection(db, LOGIN_REGISTRY_COL),
+      (snapshot) => {
+        const logs = snapshot.docs.map((d) => d.data() as FacultyLoginRecord);
+        onUpdate(logs);
+      },
+      (error) => console.warn('Login registry snapshot error:', error)
+    );
+  } catch (e) {
+    return () => {};
+  }
+}
+
+export function subscribeAdminList(onUpdate: (adminList: string[]) => void) {
+  try {
+    return onSnapshot(
+      doc(db, SETTINGS_COL, 'admin_list'),
+      (snapshot) => {
+        if (snapshot.exists()) {
+          onUpdate(snapshot.data().list || []);
+        }
+      },
+      (error) => console.warn('Admin list snapshot error:', error)
+    );
+  } catch (e) {
+    return () => {};
+  }
+}
+
+export async function saveAdminListToCloud(adminList: string[]): Promise<void> {
+  try {
+    await setDoc(doc(db, SETTINGS_COL, 'admin_list'), { list: adminList });
+  } catch (err) {
+    console.error('Error saving admin list:', err);
+  }
+}
+
+// Data Mutation API
+export async function saveStudentToCloud(student: Student): Promise<void> {
+  try {
+    const studentWithTimestamp: Student = {
+      ...student,
+      lastModified: student.lastModified || Date.now(),
+    };
+    await setDoc(doc(db, STUDENTS_COL, studentWithTimestamp.id), studentWithTimestamp, { merge: true });
+  } catch (err) {
+    console.error('Error saving student to cloud:', err);
+  }
+}
+
+export async function saveStudentsBatchToCloud(students: Student[]): Promise<void> {
+  try {
+    const batch = writeBatch(db);
+    students.forEach((s) => {
+      const studentWithTimestamp: Student = {
+        ...s,
+        lastModified: s.lastModified || Date.now(),
+      };
+      const ref = doc(db, STUDENTS_COL, s.id);
+      batch.set(ref, studentWithTimestamp, { merge: true });
+    });
+    await batch.commit();
+  } catch (err) {
+    console.error('Batch saving students failed:', err);
+  }
+}
+
+export async function deleteStudentFromCloud(studentId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, STUDENTS_COL, studentId));
+  } catch (err) {
+    console.error('Error deleting student from cloud:', err);
+  }
+}
+
+export async function saveMentorToCloud(mentor: Mentor): Promise<void> {
+  try {
+    await setDoc(doc(db, MENTORS_COL, mentor.id), mentor, { merge: true });
+  } catch (err) {
+    console.error('Error saving mentor to cloud:', err);
+  }
+}
+
+export async function saveMentorsBatchToCloud(mentors: Mentor[]): Promise<void> {
+  try {
+    const batch = writeBatch(db);
+    mentors.forEach((m) => {
+      const ref = doc(db, MENTORS_COL, m.id);
+      batch.set(ref, m, { merge: true });
+    });
+    await batch.commit();
+  } catch (err) {
+    console.error('Batch saving mentors failed:', err);
+  }
+}
+
+export async function deleteMentorFromCloud(mentorId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, MENTORS_COL, mentorId));
+  } catch (err) {
+    console.error('Error deleting mentor from cloud:', err);
+  }
+}
+
+export async function saveTeacherUpdateToCloud(updateLog: TeacherUpdateLog): Promise<void> {
+  try {
+    await setDoc(doc(db, TEACHER_UPDATES_COL, updateLog.id), updateLog);
+  } catch (err) {
+    console.error('Error saving teacher update to cloud:', err);
+  }
+}
+
+export async function markTeacherUpdateReadInCloud(updateId: string): Promise<void> {
+  try {
+    await setDoc(doc(db, TEACHER_UPDATES_COL, updateId), { isRead: true }, { merge: true });
+  } catch (err) {
+    console.error('Error marking update as read:', err);
+  }
+}
+
+export async function saveLoginRegistryToCloud(record: FacultyLoginRecord | FacultyLoginRecord[]): Promise<void> {
+  try {
+    if (Array.isArray(record)) {
+      const batch = writeBatch(db);
+      record.forEach((r) => batch.set(doc(db, LOGIN_REGISTRY_COL, r.id), r, { merge: true }));
+      await batch.commit();
+    } else {
+      await setDoc(doc(db, LOGIN_REGISTRY_COL, record.id), record, { merge: true });
+    }
+  } catch (err) {
+    console.error('Error saving login record to cloud:', err);
+  }
+}
+
+export async function saveBlockedLoginsToCloud(blockedList: string[]): Promise<void> {
+  try {
+    await setDoc(doc(db, SETTINGS_COL, 'blocked_logins'), { list: blockedList });
+  } catch (err) {
+    console.error('Error saving blocked logins:', err);
+  }
+}
+
+// Fixed Seeding Function: Ensures app seeds cloud data ONLY ONCE, and doesn't re-seed deleted items
+export async function seedInitialCloudDataIfEmpty(
+  initialStudents: Student[],
+  initialMentors: Mentor[]
+): Promise<void> {
+  try {
+    const isSeeded = localStorage.getItem('edupulse_cloud_seeded');
+    if (isSeeded === 'true') {
+      return; // Already seeded once. Do NOT override user deletions!
+    }
+
+    const studentsSnap = await getDocs(collection(db, STUDENTS_COL));
+    const mentorsSnap = await getDocs(collection(db, MENTORS_COL));
+
+    if (studentsSnap.empty && initialStudents.length > 0) {
+      const batch = writeBatch(db);
+      initialStudents.forEach((s) => batch.set(doc(db, STUDENTS_COL, s.id), s));
+      await batch.commit();
+    }
+
+    if (mentorsSnap.empty && initialMentors.length > 0) {
+      const batch = writeBatch(db);
+      initialMentors.forEach((m) => batch.set(doc(db, MENTORS_COL, m.id), m));
+      await batch.commit();
+    }
+
+    localStorage.setItem('edupulse_cloud_seeded', 'true');
+  } catch (err) {
+    console.warn('Seeding check warning:', err);
+    localStorage.setItem('edupulse_cloud_seeded', 'true');
+  }
+}
+
+/**
+ * Dedicated reconciliation check that compares the lastModified timestamp of student records
+ * between local storage and Firestore to ensure the most recent version always takes precedence
+ * during real-time updates and cross-device sync.
+ */
+export function reconcileStudentRecords(
+  localStudents: Student[],
+  cloudStudents: Student[]
+): Student[] {
+  let deletedStudentIds: string[] = [];
+  try {
+    deletedStudentIds = JSON.parse(localStorage.getItem('edupulse_deleted_students') || '[]');
+  } catch (e) {}
+
+  const studentMap = new Map<string, Student>();
+
+  // 1. Populate non-deleted local students
+  localStudents.forEach((local) => {
+    if (!deletedStudentIds.includes(local.id)) {
+      studentMap.set(local.id, local);
+    }
+  });
+
+  // 2. Compare lastModified timestamp with cloud students
+  cloudStudents.forEach((cloud) => {
+    if (deletedStudentIds.includes(cloud.id)) return;
+
+    const local = studentMap.get(cloud.id);
+    if (!local) {
+      studentMap.set(cloud.id, cloud);
+    } else {
+      const localTime = local.lastModified || 0;
+      const cloudTime = cloud.lastModified || 0;
+
+      // Ensure the most recent version always takes precedence
+      if (cloudTime >= localTime) {
+        studentMap.set(cloud.id, cloud);
+      } else {
+        studentMap.set(cloud.id, local);
+      }
+    }
+  });
+
+  return Array.from(studentMap.values());
+}
+
+// Sync Verification Utility: Checks cloud state vs local storage, re-fetching missing cloud data and prioritizing cloud over stale local storage
+export interface SyncVerificationResult {
+  students: Student[];
+  mentors: Mentor[];
+  teacherUpdates: TeacherUpdateLog[];
+  syncedFromCloud: boolean;
+}
+
+export async function verifyAndSyncCloudData(): Promise<SyncVerificationResult> {
+  try {
+    const studentsSnap = await getDocs(collection(db, STUDENTS_COL));
+    const mentorsSnap = await getDocs(collection(db, MENTORS_COL));
+    const updatesSnap = await getDocs(collection(db, TEACHER_UPDATES_COL));
+
+    const cloudStudents: Student[] = studentsSnap.docs.map((d) => d.data() as Student);
+    const cloudMentors: Mentor[] = mentorsSnap.docs.map((d) => d.data() as Mentor);
+    const cloudUpdates: TeacherUpdateLog[] = updatesSnap.docs.map((d) => d.data() as TeacherUpdateLog);
+
+    let localStudents: Student[] = [];
+    try {
+      const saved = localStorage.getItem('edupulse_students');
+      if (saved) localStudents = JSON.parse(saved);
+    } catch (e) {}
+
+    const reconciledStudents = reconcileStudentRecords(localStudents, cloudStudents);
+
+    if (cloudMentors.length > 0) {
+      localStorage.setItem('edupulse_mentors', JSON.stringify(cloudMentors));
+    }
+    if (reconciledStudents.length > 0) {
+      localStorage.setItem('edupulse_students', JSON.stringify(reconciledStudents));
+    }
+    if (cloudUpdates.length > 0) {
+      localStorage.setItem('edupulse_teacher_updates', JSON.stringify(cloudUpdates));
+    }
+
+    return {
+      students: reconciledStudents,
+      mentors: cloudMentors,
+      teacherUpdates: cloudUpdates,
+      syncedFromCloud: cloudStudents.length > 0 || cloudMentors.length > 0 || cloudUpdates.length > 0,
+    };
+  } catch (err) {
+    console.warn('Sync Verification Warning:', err);
+    return {
+      students: [],
+      mentors: [],
+      teacherUpdates: [],
+      syncedFromCloud: false,
+    };
+  }
+}

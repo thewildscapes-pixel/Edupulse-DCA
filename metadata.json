@@ -1,0 +1,8 @@
+{
+  "name": "EduPulse Digboi",
+  "description": "Institutional Mentorship & Academic Analytics Portal for Digboi College",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
