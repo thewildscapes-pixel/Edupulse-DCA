@@ -97,6 +97,10 @@ export interface Student {
   createdBy?: string;
   parentName?: string;
   parentPhone?: string;
+  dob?: string;
+  photoUrl?: string;
+  supportCategory?: string;
+  courseType?: 'FYUGP' | 'PG' | 'Diploma';
   lastModified?: number; // Epoch timestamp in milliseconds for cross-device conflict resolution
 }
 
@@ -130,6 +134,42 @@ export interface FacultyLoginRecord {
   role: Role;
   timestamp: string;
   status: 'Authorized' | 'Pending' | 'Blocked';
+}
+
+export interface QuizSubmission {
+  id: string;
+  quizId: string;
+  studentName: string;
+  rollNo: string;
+  department: string;
+  semester: number;
+  score: number;
+  totalMarks: number;
+  percentage: number;
+  submittedAt: string;
+  answersDetail?: Record<string | number, { selectedOption: number; isCorrect: boolean; questionText: string }>;
+}
+
+export interface SavedQuiz {
+  id: string;
+  title: string;
+  department: string;
+  topic: string;
+  difficulty: string;
+  timeLimitMins: number;
+  targetTotalMarks: number;
+  questions: {
+    id: string | number;
+    question: string;
+    options: string[];
+    correctIndex: number;
+    explanation: string;
+    marks: number;
+  }[];
+  createdBy: string;
+  mentorEmail?: string;
+  createdAt: string;
+  submissions?: QuizSubmission[];
 }
 
 export interface WhatsAppTemplate {

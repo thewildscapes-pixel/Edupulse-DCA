@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Edit3, Trash2, CheckCircle2 } from 'lucide-react';
+import { X, Edit3, Trash2, CheckCircle2, Camera, Image as ImageIcon } from 'lucide-react';
 import { Student, Department, PerformanceCategory, ALL_DEPARTMENTS } from '../types';
 
 interface EditMenteeModalProps {
@@ -25,9 +25,9 @@ export const EditMenteeModal: React.FC<EditMenteeModalProps> = ({
   const [department, setDepartment] = useState<Department>(student.department);
   const [program, setProgram] = useState(student.program);
   const [semester, setSemester] = useState(student.semester);
-  const [overallAttendance, setOverallAttendance] = useState<number | ''>(student.overallAttendance);
-  const [overallGpa, setOverallGpa] = useState<number | ''>(student.overallGpa);
-  const [category, setCategory] = useState<PerformanceCategory>(student.category);
+  const [courseType, setCourseType] = useState<'FYUGP' | 'PG' | 'Diploma'>(student.courseType || 'FYUGP');
+  const [dob, setDob] = useState(student.dob || '');
+  const [photoUrl, setPhotoUrl] = useState(student.photoUrl || '');
   const [guardianName, setGuardianName] = useState(student.guardianName || '');
   const [guardianPhone, setGuardianPhone] = useState(student.guardianPhone || '');
   const [email, setEmail] = useState(student.email || '');
@@ -39,13 +39,38 @@ export const EditMenteeModal: React.FC<EditMenteeModalProps> = ({
     setDepartment(student.department);
     setProgram(student.program);
     setSemester(student.semester);
-    setOverallAttendance(student.overallAttendance);
-    setOverallGpa(student.overallGpa);
-    setCategory(student.category);
+    setCourseType(student.courseType || 'FYUGP');
+    setDob(student.dob || '');
+    setPhotoUrl(student.photoUrl || '');
     setGuardianName(student.guardianName || '');
     setGuardianPhone(student.guardianPhone || '');
     setEmail(student.email || '');
   }, [student]);
+
+  // Helper for auto-support category
+  const getAutoSupportCategory = (att: number, gpa: number): PerformanceCategory => {
+    if (att === 0 && gpa === 0) return student.category || 'Good';
+    if (att < 75 || gpa < 5.0) return 'Critical Attention';
+    if (att < 80 || gpa < 6.5) return 'Needs Improvement';
+    if (gpa < 8.5) return 'Good';
+    return 'Outstanding';
+  };
+
+  const computedCategory = getAutoSupportCategory(student.overallAttendance, student.overallGpa);
+
+  // Photo File Change
+  const handlePhotoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          setPhotoUrl(event.target.result as string);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,14 +80,17 @@ export const EditMenteeModal: React.FC<EditMenteeModalProps> = ({
       enrollmentNo: enrollmentNo.trim() || student.enrollmentNo || `ENR${Math.floor(100000 + Math.random() * 900000)}`,
       rollNo: rollNo.trim(),
       department,
-      program,
+      courseType,
+      program: program.trim(),
       semester,
-      overallAttendance: overallAttendance === '' ? 0 : Number(overallAttendance),
-      overallGpa: overallGpa === '' ? 0 : Number(overallGpa),
-      category,
+      dob: dob || undefined,
+      photoUrl: photoUrl || undefined,
+      category: computedCategory,
+      supportCategory: computedCategory,
       guardianName: guardianName.trim(),
       guardianPhone: guardianPhone.trim(),
       email: email.trim(),
+      lastModified: Date.now(),
     };
     onSaveStudent(updatedStudent);
     onClose();
@@ -97,6 +125,33 @@ export const EditMenteeModal: React.FC<EditMenteeModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4 text-xs font-medium">
+          {/* Photo & Upload Options */}
+          <div className="flex flex-col sm:flex-row items-center space-y-3 sm:space-y-0 sm:space-x-4 bg-slate-50 p-3 rounded-xl border border-slate-200">
+            <div className="relative w-16 h-16 rounded-full overflow-hidden bg-slate-200 border-2 border-white shadow-sm flex items-center justify-center shrink-0">
+              {photoUrl ? (
+                <img src={photoUrl} alt="Mentee Preview" className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-xl font-bold text-slate-400">{name ? name[0].toUpperCase() : 'M'}</span>
+              )}
+            </div>
+            <div className="flex-1 space-y-1 text-center sm:text-left">
+              <label className="block text-slate-800 font-bold">Mentee Photo Upload (Gallery / Camera)</label>
+              <p className="text-[11px] text-slate-500">Select an image from device gallery or capture directly using camera.</p>
+              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
+                <label className="px-3 py-1 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold rounded-lg cursor-pointer flex items-center space-x-1 text-[11px]">
+                  <ImageIcon className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Choose Photo</span>
+                  <input type="file" accept="image/*" onChange={handlePhotoFileChange} className="hidden" />
+                </label>
+                <label className="px-3 py-1 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold rounded-lg cursor-pointer flex items-center space-x-1 text-[11px]">
+                  <Camera className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Camera Capture</span>
+                  <input type="file" accept="image/*" capture="environment" onChange={handlePhotoFileChange} className="hidden" />
+                </label>
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-slate-700 font-semibold mb-1">Student Name *</label>
@@ -130,7 +185,7 @@ export const EditMenteeModal: React.FC<EditMenteeModalProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-slate-700 font-semibold mb-1">Department</label>
               <select
@@ -141,6 +196,18 @@ export const EditMenteeModal: React.FC<EditMenteeModalProps> = ({
                 {ALL_DEPARTMENTS.map((dept) => (
                   <option key={dept} value={dept}>{dept}</option>
                 ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-slate-700 font-semibold mb-1">Course Type</label>
+              <select
+                value={courseType}
+                onChange={(e) => setCourseType(e.target.value as any)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+              >
+                <option value="FYUGP">FYUGP (4-Year UG)</option>
+                <option value="PG">PG (Postgraduate M.Sc/M.A/M.Com)</option>
+                <option value="Diploma">Diploma / Vocational</option>
               </select>
             </div>
             <div>
@@ -159,53 +226,50 @@ export const EditMenteeModal: React.FC<EditMenteeModalProps> = ({
             </div>
           </div>
 
-          <div>
-            <label className="block text-slate-700 font-semibold mb-1">Academic Program</label>
-            <input
-              type="text"
-              value={program}
-              onChange={(e) => setProgram(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-slate-700 font-semibold mb-1">Date of Birth (DOB)</label>
+              <input
+                type="date"
+                value={dob}
+                onChange={(e) => setDob(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-slate-700 font-semibold mb-1">Academic Program Title</label>
+              <input
+                type="text"
+                value={program}
+                onChange={(e) => setProgram(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+              />
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label className="block text-slate-700 font-semibold mb-1">Attendance %</label>
-              <input
-                type="number"
-                min="0"
-                max="100"
-                value={overallAttendance}
-                onChange={(e) => setOverallAttendance(e.target.value === '' ? '' : Number(e.target.value))}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-              />
+          {/* Auto-Sync Summary & Support Category Status */}
+          <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-950 text-xs font-semibold space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="font-extrabold text-emerald-900">⚡ Auto-Calculated Mentee Performance Overview</span>
+              <span className={`px-2.5 py-0.5 rounded-full font-bold text-[11px] ${
+                computedCategory === 'Critical Attention' ? 'bg-red-200 text-red-900' :
+                computedCategory === 'Needs Improvement' ? 'bg-amber-200 text-amber-900' :
+                computedCategory === 'Good' ? 'bg-blue-200 text-blue-900' : 'bg-emerald-200 text-emerald-900'
+              }`}>
+                Category: {computedCategory}
+              </span>
             </div>
-            <div>
-              <label className="block text-slate-700 font-semibold mb-1">Overall GPA</label>
-              <input
-                type="number"
-                step="0.1"
-                min="0"
-                max="10"
-                value={overallGpa}
-                onChange={(e) => setOverallGpa(e.target.value === '' ? '' : Number(e.target.value))}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-              />
+            <div className="grid grid-cols-2 gap-2 text-[11px] text-emerald-800 pt-1">
+              <div className="bg-white/80 p-2 rounded-lg border border-emerald-200">
+                Current Attendance: <strong className="text-slate-900">{student.overallAttendance}%</strong>
+              </div>
+              <div className="bg-white/80 p-2 rounded-lg border border-emerald-200">
+                Current CGPA: <strong className="text-slate-900">{student.overallGpa} / 10</strong>
+              </div>
             </div>
-            <div>
-              <label className="block text-slate-700 font-semibold mb-1">Support Category</label>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value as PerformanceCategory)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-              >
-                <option value="Critical Attention">Critical Attention</option>
-                <option value="Needs Improvement">Needs Improvement</option>
-                <option value="Good">Good</option>
-                <option value="Outstanding">Outstanding</option>
-              </select>
-            </div>
+            <p className="text-[10px] text-emerald-700 font-normal">
+              Attendance, GPA and Support Category are auto-computed from semester marks logs and cannot be manually overridden here.
+            </p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

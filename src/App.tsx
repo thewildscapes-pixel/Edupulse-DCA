@@ -17,6 +17,7 @@ import { EarlyWarningSystem } from './components/EarlyWarningSystem';
 import { WhatsAppSuite } from './components/WhatsAppSuite';
 import { ResourceLibrary } from './components/ResourceLibrary';
 import { QuizEngine } from './components/QuizEngine';
+import { StandalonePublicQuiz } from './components/StandalonePublicQuiz';
 import { OfficialNoticeGenerator } from './components/OfficialNoticeGenerator';
 import { AdminSuite } from './components/AdminSuite';
 import { OfflineBackupSyncToast } from './components/OfflineBackupSyncToast';
@@ -49,7 +50,15 @@ export default function App() {
     return localStorage.getItem('edupulse_faculty_phone') || '';
   });
   const [currentRole, setCurrentRole] = useState<Role>(() => {
-    return (localStorage.getItem('edupulse_faculty_role') as Role) || 'educator';
+    // Check if student opened a quiz link via WhatsApp / Google Form direct link
+  const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const publicQuizId = urlParams?.get('quizId');
+
+  if (publicQuizId) {
+    return <StandalonePublicQuiz quizId={publicQuizId} />;
+  }
+
+  return (localStorage.getItem('edupulse_faculty_role') as Role) || 'educator';
   });
   const [isWalkthroughOpen, setIsWalkthroughOpen] = useState<boolean>(() => {
     return !localStorage.getItem('edupulse_faculty_email');
@@ -792,6 +801,14 @@ export default function App() {
         </div>
       </div>
     );
+  }
+
+  // Check if student opened a quiz link via WhatsApp / Google Form direct link
+  const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const publicQuizId = urlParams?.get('quizId');
+
+  if (publicQuizId) {
+    return <StandalonePublicQuiz quizId={publicQuizId} />;
   }
 
   return (

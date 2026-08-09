@@ -67,6 +67,20 @@ async function startServer() {
   let cloudDbTeacherUpdates: any[] = initialStore?.teacherUpdates || [];
   let cloudDbAdminList: string[] = initialStore?.adminList || ['thewildscapes@gmail.com', '9706375001'];
   let cloudDbBlockedLogins: string[] = initialStore?.blockedLogins || [];
+  let cloudDbResources: any[] = initialStore?.resources || [];
+  let cloudDbQuizzes: any[] = initialStore?.quizzes || [];
+
+  const persistDataStore = () => {
+    saveDataStore({
+      students: cloudDbStudents,
+      mentors: cloudDbMentors,
+      teacherUpdates: cloudDbTeacherUpdates,
+      adminList: cloudDbAdminList,
+      blockedLogins: cloudDbBlockedLogins,
+      resources: cloudDbResources,
+      quizzes: cloudDbQuizzes,
+    });
+  };
 
   app.get('/api/sync-data', (_req, res) => {
     res.json({
@@ -75,12 +89,14 @@ async function startServer() {
       teacherUpdates: cloudDbTeacherUpdates,
       adminList: cloudDbAdminList,
       blockedLogins: cloudDbBlockedLogins,
+      resources: cloudDbResources,
+      quizzes: cloudDbQuizzes,
       timestamp: Date.now(),
     });
   });
 
   app.post('/api/sync-data', (req, res) => {
-    const { students, mentors, teacherUpdates, adminList, blockedLogins } = req.body;
+    const { students, mentors, teacherUpdates, adminList, blockedLogins, resources, quizzes } = req.body;
 
     if (Array.isArray(students)) {
       const studentMap = new Map();
@@ -116,13 +132,21 @@ async function startServer() {
       cloudDbBlockedLogins = Array.from(new Set([...cloudDbBlockedLogins, ...blockedLogins]));
     }
 
-    saveDataStore({
-      students: cloudDbStudents,
-      mentors: cloudDbMentors,
-      teacherUpdates: cloudDbTeacherUpdates,
-      adminList: cloudDbAdminList,
-      blockedLogins: cloudDbBlockedLogins,
-    });
+    if (Array.isArray(resources)) {
+      const resMap = new Map();
+      cloudDbResources.forEach((r) => resMap.set(r.id, r));
+      resources.forEach((r) => resMap.set(r.id, r));
+      cloudDbResources = Array.from(resMap.values());
+    }
+
+    if (Array.isArray(quizzes)) {
+      const quizMap = new Map();
+      cloudDbQuizzes.forEach((q) => quizMap.set(q.id, q));
+      quizzes.forEach((q) => quizMap.set(q.id, q));
+      cloudDbQuizzes = Array.from(quizMap.values());
+    }
+
+    persistDataStore();
 
     res.json({
       success: true,
@@ -131,8 +155,112 @@ async function startServer() {
       teacherUpdates: cloudDbTeacherUpdates,
       adminList: cloudDbAdminList,
       blockedLogins: cloudDbBlockedLogins,
+      resources: cloudDbResources,
+      quizzes: cloudDbQuizzes,
       timestamp: Date.now(),
     });
+  });
+
+  // Resources Endpoints
+  app.get('/api/resources', (_req, res) => {
+    res.json({ resources: cloudDbResources });
+  });
+
+  app.post('/api/resources', (req, res) => {
+    const resource = req.body;
+    if (!resource || !resource.id) {
+      return res.status(400).json({ error: 'Valid resource object required' });
+    }
+    const idx = cloudDbResources.findIndex((r) => r.id === resource.id);
+    if (idx >= 0) {
+      cloudDbResources[idx] = resource;
+    } else {
+      cloudDbResources.unshift(resource);
+    }
+    persistDataStore();
+    res.json({ success: true, resource, resources: cloudDbResources });
+  });
+
+  app.delete('/api/resources/:id', (req, res) => {
+    const { id } = req.params;
+    cloudDbResources = cloudDbResources.filter((r) => r.id !== id);
+    persistDataStore();
+    res.json({ success: true, resources: cloudDbResources });
+  });
+
+  // Quizzes & Submissions Endpoints
+  app.get('/api/quizzes', (_req, res) => {
+    res.json({ quizzes: cloudDbQuizzes });
+  });
+
+  app.get('/api/quizzes/:id', (req, res) => {
+    const quiz = cloudDbQuizzes.find((q) => q.id === req.params.id);
+    if (!quiz) return res.status(404).json({ error: 'Quiz not found' });
+    res.json({ quiz });
+  });
+
+  app.post('/api/quizzes', (req, res) => {
+    const quiz = req.body;
+    if (!quiz || !quiz.id) {
+      return res.status(400).json({ error: 'Valid quiz object required' });
+    }
+    const idx = cloudDbQuizzes.findIndex((q) => q.id === quiz.id);
+    if (idx >= 0) {
+      cloudDbQuizzes[idx] = { ...cloudDbQuizzes[idx], ...quiz };
+    } else {
+      quiz.submissions = quiz.submissions || [];
+      cloudDbQuizzes.unshift(quiz);
+    }
+    persistDataStore();
+    res.json({ success: true, quiz, quizzes: cloudDbQuizzes });
+  });
+
+  app.post('/api/submit-quiz-response', (req, res) => {
+    const { quizId, studentName, rollNo, department, semester, score, totalMarks, percentage, answersDetail } = req.body;
+
+    if (!quizId || !studentName || !rollNo) {
+      return res.status(400).json({ error: 'Quiz ID, student name, and roll number are required' });
+    }
+
+    const quizIndex = cloudDbQuizzes.findIndex((q) => q.id === quizId);
+    const submission = {
+      id: `sub_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      quizId,
+      studentName,
+      rollNo,
+      department: department || 'General',
+      semester: Number(semester) || 1,
+      score: Number(score) || 0,
+      totalMarks: Number(totalMarks) || 0,
+      percentage: Number(percentage) || 0,
+      submittedAt: new Date().toISOString(),
+      answersDetail,
+    };
+
+    if (quizIndex >= 0) {
+      if (!Array.isArray(cloudDbQuizzes[quizIndex].submissions)) {
+        cloudDbQuizzes[quizIndex].submissions = [];
+      }
+      cloudDbQuizzes[quizIndex].submissions.unshift(submission);
+    } else {
+      // Create ad-hoc quiz container if not present
+      cloudDbQuizzes.unshift({
+        id: quizId,
+        title: `Quiz Assessment (${department || 'General'})`,
+        department: department || 'General',
+        topic: 'General Assessment',
+        difficulty: 'Standard',
+        timeLimitMins: 30,
+        targetTotalMarks: totalMarks || 20,
+        questions: [],
+        createdBy: 'Educator',
+        createdAt: new Date().toISOString(),
+        submissions: [submission],
+      });
+    }
+
+    persistDataStore();
+    res.json({ success: true, submission });
   });
 
   // 2. AI Student Diagnostic Analysis Endpoint
@@ -170,7 +298,7 @@ async function startServer() {
               'Conceptual gaps in core subject fundamentals'
             ],
             remedialActionPlan: [
-              'Attend Digboi College Saturday morning remedial tutorials',
+              'Enroll in Digboi College remedial tutorials',
               'Bi-weekly progress review with assigned Faculty Mentor',
               'Submit concept reinforcement worksheets'
             ],
@@ -283,7 +411,7 @@ Return ONLY a JSON object with this exact structure:
             'Fundamental concept revision required in core modules'
           ],
           remedialActionPlan: [
-            'Enroll in Digboi College Saturday morning remedial classes',
+            'Enroll in Digboi College remedial classes',
             'Bi-weekly progress checks with assigned Faculty Mentor',
             'Peer group study pairing'
           ],

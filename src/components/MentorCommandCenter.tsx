@@ -481,10 +481,18 @@ export const MentorCommandCenter: React.FC<MentorCommandCenterProps> = ({
                         <span>Enter / Track Semester Marks</span>
                       </button>
 
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between gap-1">
+                        <button
+                          onClick={() => onEditStudent(student)}
+                          className="inline-flex items-center space-x-1 px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-[11px] font-bold cursor-pointer transition-colors"
+                        >
+                          <UserCheck className="w-3.5 h-3.5 text-[#1976d2]" />
+                          <span>👤 View/Edit Profile</span>
+                        </button>
+
                         <button
                           onClick={() => onNavigate('ai-analysis', student.id)}
-                          className="inline-flex items-center space-x-1 text-xs font-semibold text-[#1976d2] hover:underline cursor-pointer"
+                          className="inline-flex items-center space-x-1 text-[11px] font-semibold text-[#1976d2] hover:underline cursor-pointer"
                         >
                           <BrainCircuit className="w-3.5 h-3.5" />
                           <span>AI Diagnosis</span>
@@ -659,14 +667,15 @@ export const MentorCommandCenter: React.FC<MentorCommandCenterProps> = ({
 
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="block font-semibold text-slate-700 mb-1">End-Sem Exam (/80 or 100)</label>
+                        <label className="block font-semibold text-slate-700 mb-1">End-Sem Exam Marks (/60)</label>
                         <input
                           type="number"
                           step="1"
                           min="0"
-                          max="100"
+                          max="60"
                           value={semesterMarksInput}
                           onChange={(e) => setSemesterMarksInput(e.target.value === '' ? '' : Number(e.target.value))}
+                          placeholder="Max 60"
                           className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-xl text-center outline-none focus:ring-2 focus:ring-blue-500 font-bold"
                         />
                       </div>

@@ -56,22 +56,35 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ currentMentor 
   const [selectedFileName, setSelectedFileName] = useState('');
   const [selectedFileDataUrl, setSelectedFileDataUrl] = useState('');
 
+  // Fetch resources from server API on mount and sync to local storage
+  useEffect(() => {
+    fetch('/api/resources')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && Array.isArray(data.resources)) {
+          setResources((prev) => {
+            const map = new Map<string, ResourceItem>();
+            prev.forEach((r) => map.set(r.id, r));
+            data.resources.forEach((r: ResourceItem) => map.set(r.id, r));
+            const merged = Array.from(map.values());
+            localStorage.setItem('edupulse_resources', JSON.stringify(merged));
+            return merged;
+          });
+        }
+      })
+      .catch((err) => console.warn('Could not fetch server resources:', err));
+  }, []);
+
   useEffect(() => {
     localStorage.setItem('edupulse_resources', JSON.stringify(resources));
   }, [resources]);
 
-  // Ensure all resources uploaded by mentor, department or author remain fully visible
-  const myResources = resources.filter((r) => 
-    !r.uploadedByMentorId ||
-    r.uploadedByMentorId === currentMentor.id || 
-    (currentMentor.name && r.author?.toLowerCase() === currentMentor.name?.toLowerCase()) ||
-    (currentMentor.department && r.department === currentMentor.department)
-  );
-
-  const filtered = myResources.filter((r) => {
+  // Show all resources matching selected department filter (or belonging to mentor's department/all)
+  const filtered = resources.filter((r) => {
     const matchesSearch =
       r.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      r.description.toLowerCase().includes(searchTerm.toLowerCase());
+      r.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      r.author.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesDept = selectedDept === 'All' || r.department === selectedDept;
     return matchesSearch && matchesDept;
   });
@@ -90,7 +103,7 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ currentMentor 
     }
   };
 
-  const handleAddResource = (e: React.FormEvent) => {
+  const handleAddResource = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) {
       alert('Please enter a resource title.');
@@ -104,8 +117,8 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ currentMentor 
       department,
       fileType,
       description: description.trim() || 'No description provided.',
-      author: currentMentor.name || 'Faculty Member',
-      uploadedByMentorId: currentMentor.id,
+      author: currentMentor?.name || 'Faculty Member',
+      uploadedByMentorId: currentMentor?.id || 'f_1',
       dateAdded: new Date().toISOString().split('T')[0],
       fileUrl: externalUrl.trim() || selectedFileDataUrl || undefined,
       fileName: selectedFileName || `${title.trim()}.${fileType.toLowerCase()}`
@@ -113,6 +126,17 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ currentMentor 
 
     setResources((prev) => [newRes, ...prev]);
     setIsModalOpen(false);
+
+    // Save to server
+    try {
+      await fetch('/api/resources', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newRes),
+      });
+    } catch (err) {
+      console.warn('Failed to sync resource to server:', err);
+    }
 
     // Reset Form
     setTitle('');
@@ -122,9 +146,14 @@ export const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ currentMentor 
     setSelectedFileDataUrl('');
   };
 
-  const handleDeleteResource = (id: string, resTitle: string) => {
-    if (window.confirm(`Are you sure you want to delete "${resTitle}" from your personal library?`)) {
+  const handleDeleteResource = async (id: string, resTitle: string) => {
+    if (window.confirm(`Are you sure you want to delete "${resTitle}" from the library?`)) {
       setResources((prev) => prev.filter((r) => r.id !== id));
+      try {
+        await fetch(`/api/resources/${id}`, { method: 'DELETE' });
+      } catch (err) {
+        console.warn('Failed to delete resource on server:', err);
+      }
     }
   };
 

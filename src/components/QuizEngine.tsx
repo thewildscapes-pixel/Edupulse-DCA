@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   HelpCircle, 
   CheckCircle2, 
@@ -275,10 +275,59 @@ export const QuizEngine: React.FC<QuizEngineProps> = ({ students }) => {
     setSubmitted(false);
   };
 
+  // Active Quiz ID for online student submissions
+  const [activeQuizId, setActiveQuizId] = useState<string>(() => `quiz_${Date.now()}`);
+  const [publishedQuizzes, setPublishedQuizzes] = useState<any[]>([]);
+  const [isSubmissionsModalOpen, setIsSubmissionsModalOpen] = useState<boolean>(false);
+
+  // Fetch published quizzes and student submissions
+  const fetchPublishedQuizzes = () => {
+    fetch('/api/quizzes')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && Array.isArray(data.quizzes)) {
+          setPublishedQuizzes(data.quizzes);
+        }
+      })
+      .catch((e) => console.warn('Could not fetch quizzes:', e));
+  };
+
+  useEffect(() => {
+    fetchPublishedQuizzes();
+  }, []);
+
+  const saveAndPublishQuizToServer = async () => {
+    if (quizQuestions.length === 0) return;
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://edupulse.digboicollege.edu.in';
+    const currentQuizPayload = {
+      id: activeQuizId,
+      title: `Assessment: ${topicInput || selectedSubject}`,
+      department: selectedSubject,
+      topic: topicInput || 'Departmental Sessional Assessment',
+      difficulty,
+      timeLimitMins: Number(quizTimeLimitMins) || 30,
+      targetTotalMarks: Number(targetTotalMarks) || sumAssignedMarks,
+      questions: quizQuestions,
+      createdBy: 'Faculty Mentor',
+      createdAt: new Date().toISOString(),
+    };
+
+    try {
+      await fetch('/api/quizzes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(currentQuizPayload),
+      });
+      fetchPublishedQuizzes();
+    } catch (err) {
+      console.warn('Failed to publish quiz to server:', err);
+    }
+  };
+
   // WhatsApp Formatted Text Payload
   const getWhatsAppShareText = () => {
     const origin = typeof window !== 'undefined' ? window.location.origin : 'https://edupulse.digboicollege.edu.in';
-    const interactiveQuizLink = `${origin}/?tab=quiz`;
+    const interactiveQuizLink = `${origin}/?quizId=${activeQuizId}`;
 
     let text = `🎓 *DIGBOI COLLEGE (AUTONOMOUS)*\n`;
     text += `*DEPARTMENT OF ${selectedSubject.toUpperCase()}*\n`;
@@ -286,7 +335,7 @@ export const QuizEngine: React.FC<QuizEngineProps> = ({ students }) => {
     text += `📌 *Topic:* ${topicInput || 'Department Assessment'}\n`;
     text += `📊 *Difficulty Level:* ${difficulty}\n`;
     text += `⏱️ *Time Allowed:* ${quizTimeLimitMins} Minutes | 💯 *Total Marks:* ${targetTotalMarks} Marks (${quizQuestions.length} Questions)\n\n`;
-    text += `🔗 *TAKE INTERACTIVE QUIZ ONLINE HERE:*\n${interactiveQuizLink}\n\n`;
+    text += `🔗 *TAKE INTERACTIVE ONLINE QUIZ (NO LOGIN REQUIRED):*\n${interactiveQuizLink}\n\n`;
     text += `------------------------------------\n`;
     text += `📄 *QUESTION PAPER SUMMARY*\n`;
     text += `------------------------------------\n\n`;
@@ -300,12 +349,13 @@ export const QuizEngine: React.FC<QuizEngineProps> = ({ students }) => {
     });
 
     text += `------------------------------------\n`;
-    text += `*Instructions:* Click the interactive link above to take the online test with instant grading or submit written answers to your Faculty Mentor. Generated via Digboi College EduPulse Portal.`;
+    text += `*Instructions:* Click the link above to answer questions online like Google Forms. Your score is automatically logged with your mentor.`;
     return text;
   };
 
   // Send Direct to WhatsApp
   const handleShareToWhatsApp = (phone?: string) => {
+    saveAndPublishQuizToServer();
     const rawText = getWhatsAppShareText();
     const encodedText = encodeURIComponent(rawText);
     let url = `https://api.whatsapp.com/send?text=${encodedText}`;
@@ -319,6 +369,7 @@ export const QuizEngine: React.FC<QuizEngineProps> = ({ students }) => {
   };
 
   const handleCopyWhatsAppText = () => {
+    saveAndPublishQuizToServer();
     const text = getWhatsAppShareText();
     navigator.clipboard.writeText(text);
     setCopySuccess(true);
@@ -488,11 +539,23 @@ export const QuizEngine: React.FC<QuizEngineProps> = ({ students }) => {
             <BookOpen className="w-5 h-5 text-amber-300" />
             <h3 className="text-base font-bold text-white">Faculty Assessment Setup & Quiz Parameters</h3>
           </div>
-          <div className="bg-white/10 px-3 py-1 rounded-full text-xs font-semibold text-blue-100 backdrop-blur-xs flex items-center space-x-1.5">
-            <Target className="w-3.5 h-3.5 text-amber-300" />
-            <span>
-              Target: <strong className="text-amber-300 font-black">{targetTotalMarks} Marks</strong> | Time: <strong className="text-amber-300 font-black">{quizTimeLimitMins} Mins</strong> ({quizQuestions.length} Questions)
-            </span>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => {
+                fetchPublishedQuizzes();
+                setIsSubmissionsModalOpen(true);
+              }}
+              className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center space-x-1.5 cursor-pointer"
+            >
+              <Award className="w-4 h-4" />
+              <span>📊 View Student Quiz Marks ({publishedQuizzes.reduce((acc, q) => acc + (q.submissions?.length || 0), 0)})</span>
+            </button>
+            <div className="bg-white/10 px-3 py-1 rounded-full text-xs font-semibold text-blue-100 backdrop-blur-xs flex items-center space-x-1.5 hidden sm:flex">
+              <Target className="w-3.5 h-3.5 text-amber-300" />
+              <span>
+                Target: <strong className="text-amber-300 font-black">{targetTotalMarks} Marks</strong> | Time: <strong className="text-amber-300 font-black">{quizTimeLimitMins} Mins</strong> ({quizQuestions.length} Questions)
+              </span>
+            </div>
           </div>
         </div>
 
@@ -1028,6 +1091,113 @@ export const QuizEngine: React.FC<QuizEngineProps> = ({ students }) => {
                   Close
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Student Submissions Modal */}
+      {isSubmissionsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50">
+              <div className="flex items-center space-x-2">
+                <Award className="w-5 h-5 text-emerald-600" />
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Student Quiz Submissions & Marks Log</h3>
+                  <p className="text-xs text-slate-500">Live responses submitted by students via WhatsApp Google Form link</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsSubmissionsModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto space-y-6 text-xs">
+              {publishedQuizzes.length === 0 ? (
+                <div className="text-center py-10 text-slate-400">
+                  <p className="font-semibold text-sm text-slate-600">No published quizzes found.</p>
+                  <p className="text-xs mt-1">Publish a quiz to WhatsApp to start receiving student responses!</p>
+                </div>
+              ) : (
+                publishedQuizzes.map((quiz) => {
+                  const submissions: any[] = quiz.submissions || [];
+
+                  return (
+                    <div key={quiz.id} className="border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+                      <div className="bg-slate-100 p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <span className="font-extrabold text-slate-900 text-sm">{quiz.title}</span>
+                          <div className="text-[11px] text-slate-500 font-medium">
+                            Dept: {quiz.department} | Topic: {quiz.topic} | Target: {quiz.targetTotalMarks} Marks
+                          </div>
+                        </div>
+                        <span className="bg-emerald-100 text-emerald-800 font-extrabold px-3 py-1 rounded-full text-xs">
+                          {submissions.length} {submissions.length === 1 ? 'Response' : 'Responses'} Received
+                        </span>
+                      </div>
+
+                      {submissions.length === 0 ? (
+                        <div className="p-4 text-center text-slate-400 font-medium italic">
+                          No student submissions received for this quiz link yet.
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left border-collapse">
+                            <thead>
+                              <tr className="bg-slate-50 text-slate-500 uppercase text-[10px] font-bold border-b border-slate-200">
+                                <th className="py-2.5 px-4">#</th>
+                                <th className="py-2.5 px-4">Student Name</th>
+                                <th className="py-2.5 px-4">Roll Number</th>
+                                <th className="py-2.5 px-4">Semester</th>
+                                <th className="py-2.5 px-4">Marks Obtained</th>
+                                <th className="py-2.5 px-4">Percentage</th>
+                                <th className="py-2.5 px-4">Submitted At</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                              {submissions.map((sub, idx) => (
+                                <tr key={sub.id || idx} className="hover:bg-slate-50/80">
+                                  <td className="py-2.5 px-4 text-slate-400 font-bold">{idx + 1}</td>
+                                  <td className="py-2.5 px-4 font-bold text-slate-900">{sub.studentName}</td>
+                                  <td className="py-2.5 px-4 text-slate-600 font-mono">{sub.rollNo}</td>
+                                  <td className="py-2.5 px-4">Sem {sub.semester}</td>
+                                  <td className="py-2.5 px-4 font-black text-blue-700">
+                                    {sub.score} / {sub.totalMarks}
+                                  </td>
+                                  <td className="py-2.5 px-4">
+                                    <span className={`px-2 py-0.5 rounded-md font-bold text-[11px] ${
+                                      sub.percentage >= 75 ? 'bg-emerald-100 text-emerald-800' :
+                                      sub.percentage >= 50 ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'
+                                    }`}>
+                                      {sub.percentage}%
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5 px-4 text-slate-400 text-[11px]">
+                                    {new Date(sub.submittedAt).toLocaleDateString()} {new Date(sub.submittedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
+              <button
+                onClick={() => setIsSubmissionsModalOpen(false)}
+                className="px-5 py-2 bg-slate-800 text-white font-bold text-xs rounded-xl hover:bg-slate-900 cursor-pointer"
+              >
+                Close Marks Log
+              </button>
             </div>
           </div>
         </div>
