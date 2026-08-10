@@ -402,8 +402,43 @@ export async function verifyAndSyncCloudData(): Promise<SyncVerificationResult> 
     const combinedCloudStudents = Array.from(combinedStudentsMap.values());
 
     const combinedMentorsMap = new Map<string, Mentor>();
-    serverMentors.forEach((m) => combinedMentorsMap.set(m.id, m));
-    cloudMentors.forEach((m) => combinedMentorsMap.set(m.id, m));
+    const getMentorKey = (m: Mentor) => {
+      const normE = (m.email || '').trim().toLowerCase();
+      if (normE) return `email:${normE}`;
+      const normP = (m.phone || '').replace(/\D/g, '').slice(-10);
+      if (normP) return `phone:${normP}`;
+      return `id:${m.id}`;
+    };
+
+    [...serverMentors, ...cloudMentors].forEach((m) => {
+      const key = getMentorKey(m);
+      const existing = combinedMentorsMap.get(key);
+      if (existing) {
+        const isExistingGeneric = !existing.name || existing.name.includes('Faculty Member') || existing.name.startsWith('Prof. Faculty');
+        const isNewGeneric = !m.name || m.name.includes('Faculty Member') || m.name.startsWith('Prof. Faculty');
+
+        let bestName = existing.name;
+        if (isExistingGeneric && !isNewGeneric) {
+          bestName = m.name;
+        } else if (m.name && !isNewGeneric) {
+          bestName = m.name;
+        }
+
+        combinedMentorsMap.set(key, {
+          ...existing,
+          ...m,
+          id: existing.id || m.id,
+          name: bestName,
+          designation: (m.designation && m.designation !== 'Assistant Professor') ? m.designation : (existing.designation || m.designation || 'Assistant Professor'),
+          department: m.department || existing.department || 'Physics',
+          email: m.email || existing.email,
+          phone: m.phone || existing.phone,
+          assignedMenteeIds: Array.from(new Set([...(existing.assignedMenteeIds || []), ...(m.assignedMenteeIds || [])])),
+        });
+      } else {
+        combinedMentorsMap.set(key, m);
+      }
+    });
     const combinedCloudMentors = Array.from(combinedMentorsMap.values());
 
     const combinedUpdatesMap = new Map<string, TeacherUpdateLog>();

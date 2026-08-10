@@ -112,8 +112,49 @@ async function startServer() {
 
     if (Array.isArray(mentors)) {
       const mentorMap = new Map();
-      cloudDbMentors.forEach((m) => mentorMap.set(m.id, m));
-      mentors.forEach((m) => mentorMap.set(m.id, m));
+      const getMentorKey = (m: any) => {
+        const normE = (m.email || '').trim().toLowerCase();
+        if (normE) return `email:${normE}`;
+        const normP = (m.phone || '').replace(/\D/g, '').slice(-10);
+        if (normP) return `phone:${normP}`;
+        return `id:${m.id}`;
+      };
+
+      cloudDbMentors.forEach((m) => {
+        const key = getMentorKey(m);
+        mentorMap.set(key, m);
+      });
+
+      mentors.forEach((m) => {
+        const key = getMentorKey(m);
+        const existing = mentorMap.get(key);
+        if (existing) {
+          const isExistingGenericName = !existing.name || existing.name.includes('Faculty Member') || existing.name.startsWith('Prof. Faculty');
+          const isNewGenericName = !m.name || m.name.includes('Faculty Member') || m.name.startsWith('Prof. Faculty');
+
+          let bestName = existing.name;
+          if (isExistingGenericName && !isNewGenericName) {
+            bestName = m.name;
+          } else if (m.name && !isNewGenericName) {
+            bestName = m.name;
+          }
+
+          const merged = {
+            ...existing,
+            ...m,
+            id: existing.id || m.id,
+            name: bestName,
+            designation: (m.designation && m.designation !== 'Assistant Professor') ? m.designation : (existing.designation || m.designation || 'Assistant Professor'),
+            department: m.department || existing.department || 'Physics',
+            email: m.email || existing.email,
+            phone: m.phone || existing.phone,
+            assignedMenteeIds: Array.from(new Set([...(existing.assignedMenteeIds || []), ...(m.assignedMenteeIds || [])])),
+          };
+          mentorMap.set(key, merged);
+        } else {
+          mentorMap.set(key, m);
+        }
+      });
       cloudDbMentors = Array.from(mentorMap.values());
     }
 

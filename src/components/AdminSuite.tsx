@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Student, Mentor } from '../types';
 import { CollegeLogo } from './CollegeLogo';
 import { subscribeLoginRegistry, saveLoginRegistryToCloud } from '../lib/firebase';
+import jsPDF from 'jspdf';
 import { 
   Settings, 
   Download, 
@@ -34,7 +35,8 @@ import {
   RotateCcw,
   Send,
   Sparkles,
-  Layers
+  Layers,
+  FileText
 } from 'lucide-react';
 
 interface AdminSuiteProps {
@@ -435,6 +437,207 @@ export const AdminSuite: React.FC<AdminSuiteProps> = ({
     a.click();
   };
 
+  const handleExportStudentPDF = () => {
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const totalStudents = students.length;
+    const avgAttendance = totalStudents > 0
+      ? (students.reduce((acc, s) => acc + (s.overallAttendance || 0), 0) / totalStudents).toFixed(1)
+      : '0.0';
+    const avgGpa = totalStudents > 0
+      ? (students.reduce((acc, s) => acc + (s.overallGpa || 0), 0) / totalStudents).toFixed(2)
+      : '0.00';
+    const advancedCount = students.filter((s) => s.category === 'Advanced Learner').length;
+    const moderateCount = students.filter((s) => s.category === 'Moderate Performer').length;
+    const criticalCount = students.filter((s) => s.category === 'Critical Attention').length;
+
+    const reportDate = new Date().toLocaleDateString('en-IN', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+
+    const drawHeader = (pageNum: number) => {
+      doc.setFillColor(25, 118, 210); // #1976d2
+      doc.rect(0, 0, 210, 26, 'F');
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.text('DIGBOI COLLEGE (AUTONOMOUS)', 14, 10);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.text('NAAC Grade A+ (CGPA 3.49) • ESTD 1965 • Digboi, Tinsukia, Assam', 14, 16);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.text('OFFICIAL STUDENT ACADEMIC PERFORMANCE & MENTORSHIP SUMMARY REPORT', 14, 22);
+
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Date: ${reportDate}`, 196, 12, { align: 'right' });
+      doc.text(`Total Mentees: ${totalStudents}`, 196, 18, { align: 'right' });
+    };
+
+    drawHeader(1);
+
+    // Summary Metric Cards
+    doc.setFillColor(241, 245, 249);
+    doc.roundedRect(14, 30, 182, 22, 2, 2, 'F');
+    doc.setDrawColor(203, 213, 225);
+    doc.roundedRect(14, 30, 182, 22, 2, 2, 'D');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text('AVG ATTENDANCE', 18, 36);
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`${avgAttendance}%`, 18, 44);
+
+    doc.setFontSize(7.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text('AVERAGE GPA', 58, 36);
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`${avgGpa} / 10`, 58, 44);
+
+    doc.setFontSize(7.5);
+    doc.setTextColor(21, 128, 61);
+    doc.text('ADVANCED LEARNERS', 98, 36);
+    doc.setFontSize(11);
+    doc.text(`${advancedCount}`, 98, 44);
+
+    doc.setFontSize(7.5);
+    doc.setTextColor(3, 105, 161);
+    doc.text('MODERATE LEARNERS', 138, 36);
+    doc.setFontSize(11);
+    doc.text(`${moderateCount}`, 138, 44);
+
+    doc.setFontSize(7.5);
+    doc.setTextColor(185, 28, 28);
+    doc.text('CRITICAL ATTN.', 172, 36);
+    doc.setFontSize(11);
+    doc.text(`${criticalCount}`, 172, 44);
+
+    const startY = 58;
+    let currentY = startY;
+
+    const drawTableHeader = (y: number) => {
+      doc.setFillColor(30, 41, 59);
+      doc.rect(14, y, 182, 8, 'F');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(255, 255, 255);
+
+      doc.text('#', 17, y + 5.5);
+      doc.text('Roll Number', 25, y + 5.5);
+      doc.text('Student Name', 55, y + 5.5);
+      doc.text('Dept / Sem', 105, y + 5.5);
+      doc.text('Att. %', 135, y + 5.5);
+      doc.text('GPA', 152, y + 5.5);
+      doc.text('Academic Status', 168, y + 5.5);
+    };
+
+    drawTableHeader(currentY);
+    currentY += 8;
+
+    const dataStudents = filteredStudents.length > 0 ? filteredStudents : students;
+
+    dataStudents.forEach((student, index) => {
+      if (currentY > 268) {
+        doc.addPage();
+        drawHeader(doc.getNumberOfPages());
+        currentY = 32;
+        drawTableHeader(currentY);
+        currentY += 8;
+      }
+
+      if (index % 2 === 1) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(14, currentY, 182, 7.5, 'F');
+      }
+
+      doc.setDrawColor(226, 232, 240);
+      doc.line(14, currentY + 7.5, 196, currentY + 7.5);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(15, 23, 42);
+
+      doc.text(`${index + 1}`, 17, currentY + 5);
+
+      doc.setFont('courier', 'bold');
+      doc.text(student.rollNo || '-', 25, currentY + 5);
+      doc.setFont('helvetica', 'normal');
+
+      const truncatedName = student.name.length > 22 ? student.name.substring(0, 20) + '..' : student.name;
+      doc.setFont('helvetica', 'bold');
+      doc.text(truncatedName, 55, currentY + 5);
+      doc.setFont('helvetica', 'normal');
+
+      doc.text(`${student.department || 'Gen'} (S${student.semester || 1})`, 105, currentY + 5);
+
+      doc.setFont('helvetica', 'bold');
+      if (student.overallAttendance < 75) {
+        doc.setTextColor(185, 28, 28);
+      } else {
+        doc.setTextColor(21, 128, 61);
+      }
+      doc.text(`${student.overallAttendance}%`, 135, currentY + 5);
+
+      doc.setTextColor(15, 23, 42);
+      doc.text(`${(student.overallGpa || 0).toFixed(1)}`, 152, currentY + 5);
+
+      let catLabel = student.category || 'Moderate Performer';
+      if (catLabel === 'Advanced Learner') {
+        doc.setFillColor(220, 252, 231);
+        doc.setTextColor(21, 128, 61);
+      } else if (catLabel === 'Critical Attention') {
+        doc.setFillColor(254, 226, 226);
+        doc.setTextColor(185, 28, 28);
+      } else {
+        doc.setFillColor(224, 242, 254);
+        doc.setTextColor(3, 105, 161);
+      }
+
+      doc.roundedRect(167, currentY + 1, 27, 5.5, 1, 1, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7);
+      doc.text(catLabel === 'Critical Attention' ? 'Critical Attn' : (catLabel === 'Advanced Learner' ? 'Advanced' : 'Moderate'), 180.5, currentY + 4.8, { align: 'center' });
+
+      currentY += 7.5;
+    });
+
+    const totalPages = doc.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i);
+      doc.setDrawColor(203, 213, 225);
+      doc.line(14, 282, 196, 282);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text('Digboi College EduPulse Governance Portal • Official Student Data Report', 14, 287);
+      doc.text(`Page ${i} of ${totalPages}`, 196, 287, { align: 'right' });
+    }
+
+    const filename = `Digboi_College_Student_Academic_Summary_${new Date().toISOString().split('T')[0]}.pdf`;
+    doc.save(filename);
+
+    setAuditLogs((prev) => [
+      {
+        id: `log_${Date.now()}`,
+        timestamp: new Date().toLocaleString(),
+        action: `Exported Student Data PDF Summary Report (${dataStudents.length} Records)`,
+        user: userEmail || 'admin.dev@digboicollege.edu.in',
+        type: 'system',
+      },
+      ...prev,
+    ]);
+  };
+
   const handleSaveGovernance = (e: React.FormEvent) => {
     e.preventDefault();
     setGovernanceSaved(true);
@@ -683,13 +886,23 @@ export const AdminSuite: React.FC<AdminSuiteProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={handleExportCSV}
-            className="bg-[#1976d2] hover:bg-blue-600 text-white font-bold px-5 py-2.5 rounded-xl text-xs flex items-center justify-center space-x-2 transition-colors cursor-pointer shadow-md shrink-0"
-          >
-            <Download className="w-4 h-4" />
-            <span>Export Master Report (CSV)</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              onClick={handleExportStudentPDF}
+              className="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-extrabold px-4 py-2.5 rounded-xl text-xs flex items-center justify-center space-x-2 transition-colors cursor-pointer shadow-md"
+            >
+              <FileText className="w-4 h-4 text-emerald-200" />
+              <span>Export Student Data (PDF)</span>
+            </button>
+
+            <button
+              onClick={handleExportCSV}
+              className="bg-[#1976d2] hover:bg-blue-600 text-white font-bold px-4 py-2.5 rounded-xl text-xs flex items-center justify-center space-x-2 transition-colors cursor-pointer shadow-md"
+            >
+              <Download className="w-4 h-4" />
+              <span>Export Master Report (CSV)</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -905,15 +1118,27 @@ export const AdminSuite: React.FC<AdminSuiteProps> = ({
                 </div>
               </div>
 
-              <div className="relative w-full sm:w-64">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-                <input
-                  type="text"
-                  placeholder="Search mentee name or roll..."
-                  value={adminSearch}
-                  onChange={(e) => setAdminSearch(e.target.value)}
-                  className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:ring-2 focus:ring-[#1976d2] focus:bg-white"
-                />
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleExportStudentPDF}
+                  className="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-extrabold px-3 py-1.5 rounded-xl text-xs flex items-center space-x-1.5 transition-colors cursor-pointer shadow-xs shrink-0"
+                  title="Export PDF Student Report"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Export PDF</span>
+                </button>
+
+                <div className="relative w-full sm:w-64">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    placeholder="Search mentee name or roll..."
+                    value={adminSearch}
+                    onChange={(e) => setAdminSearch(e.target.value)}
+                    className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:ring-2 focus:ring-[#1976d2] focus:bg-white"
+                  />
+                </div>
               </div>
             </div>
 

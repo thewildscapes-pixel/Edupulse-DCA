@@ -406,14 +406,25 @@ export default function App() {
     }
   }, [mentors, isLoading]);
 
+  // Helper for deterministic mentor ID based on normalized email or phone
+  const getMentorId = (emailStr?: string, phoneStr?: string) => {
+    const normE = (emailStr || '').trim().toLowerCase();
+    if (normE) return `m_${normE.replace(/[^a-z0-9]/g, '_')}`;
+    const normP = (phoneStr || '').replace(/\D/g, '').slice(-10);
+    if (normP) return `m_ph_${normP}`;
+    return `m_guest_${Date.now()}`;
+  };
+
   // Derive active logged-in mentor from userEmail or userPhone
   const currentMentor: Mentor = React.useMemo(() => {
     const normEmail = userEmail.trim().toLowerCase();
     const normPhone = userPhone.replace(/\D/g, '').slice(-10);
+    const targetId = getMentorId(userEmail, userPhone);
 
     const existing = mentors.find(
       (m) =>
-        (normEmail && m.email.toLowerCase() === normEmail) ||
+        m.id === targetId ||
+        (normEmail && m.email && m.email.trim().toLowerCase() === normEmail) ||
         (normPhone && m.phone && m.phone.replace(/\D/g, '').slice(-10) === normPhone)
     );
     if (existing) return existing;
@@ -426,7 +437,7 @@ export default function App() {
     const title = isDr ? 'Dr.' : 'Prof.';
 
     return {
-      id: `m_${normEmail.replace(/[^a-z0-9]/g, '_') || Date.now()}`,
+      id: targetId,
       name: `${title} ${formattedName}`,
       department: 'Physics',
       email: userEmail.trim(),
@@ -555,6 +566,7 @@ export default function App() {
   }) => {
     const finalEmail = profile.email.trim();
     const finalPhone = profile.phone.trim();
+    const targetId = profile.id || getMentorId(finalEmail, finalPhone);
 
     // Only update active session user email/phone if updating current user profile
     const isUpdatingSelf =
@@ -572,14 +584,13 @@ export default function App() {
     let savedMentorObj: Mentor | null = null;
 
     setMentors((prev) => {
-      const targetId = profile.id;
       const normEmail = finalEmail.toLowerCase();
       const normPhone = finalPhone.replace(/\D/g, '').slice(-10);
 
       const idx = prev.findIndex(
         (m) =>
-          (targetId && m.id === targetId) ||
-          (normEmail && m.email.toLowerCase() === normEmail) ||
+          m.id === targetId ||
+          (normEmail && m.email && m.email.toLowerCase() === normEmail) ||
           (normPhone && m.phone && m.phone.replace(/\D/g, '').slice(-10) === normPhone)
       );
 
@@ -587,6 +598,7 @@ export default function App() {
         const updated = [...prev];
         updated[idx] = {
           ...updated[idx],
+          id: targetId,
           name: profile.name,
           designation: profile.designation,
           department: profile.department,
@@ -600,7 +612,7 @@ export default function App() {
       }
 
       const newMentor: Mentor = {
-        id: profile.id || `m_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        id: targetId,
         name: profile.name,
         designation: profile.designation,
         department: profile.department,
@@ -654,10 +666,12 @@ export default function App() {
     setMentors((prev) => {
       const normEmail = finalEmail.toLowerCase();
       const normPhone = finalPhone.replace(/\D/g, '').slice(-10);
+      const targetId = getMentorId(finalEmail, finalPhone);
 
       const idx = prev.findIndex(
         (m) =>
-          (normEmail && m.email.toLowerCase() === normEmail) ||
+          m.id === targetId ||
+          (normEmail && m.email && m.email.toLowerCase() === normEmail) ||
           (normPhone && m.phone && m.phone.replace(/\D/g, '').slice(-10) === normPhone)
       );
 
@@ -672,6 +686,7 @@ export default function App() {
 
         updated[idx] = {
           ...existing,
+          id: targetId,
           email: finalEmail || existing.email,
           phone: finalPhone || existing.phone,
           name: isDefaultName ? (mentorProfile?.name || existing.name || 'Dr. Deborshee Gogoi') : existing.name,
@@ -683,14 +698,19 @@ export default function App() {
         return updated;
       }
 
+      // Collect any students created by or associated with this email
+      const matchedStudentIds = students
+        .filter((s) => (s.creatorEmail && s.creatorEmail.trim().toLowerCase() === normEmail) || s.mentorId === targetId)
+        .map((s) => s.id);
+
       const newMentor: Mentor = {
-        id: `m_${Date.now()}`,
+        id: targetId,
         name: mentorProfile?.name || `Dr. Deborshee Gogoi`,
         designation: mentorProfile?.designation || 'Assistant Professor',
         department: mentorProfile?.department || 'Physics',
         email: finalEmail,
         phone: mentorProfile?.phone || finalPhone,
-        assignedMenteeIds: students.map((s) => s.id),
+        assignedMenteeIds: matchedStudentIds.length > 0 ? matchedStudentIds : students.map((s) => s.id),
         isPreloaded: false,
       };
       updatedMentorToSync = newMentor;
