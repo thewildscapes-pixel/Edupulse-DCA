@@ -26,6 +26,7 @@ import {
   CheckCircle
 } from 'lucide-react';
 import { Student, Mentor, TeacherUpdateLog, Role, CourseCategory, SubjectMarks } from '../types';
+import { isStudentOfMentor } from '../utils/ownership';
 
 interface MentorCommandCenterProps {
   students: Student[];
@@ -100,17 +101,9 @@ export const MentorCommandCenter: React.FC<MentorCommandCenterProps> = ({
   const [activeSubTab, setActiveSubTab] = useState<'mentees' | 'semester-marks' | 'bulk-marks' | 'updates'>('mentees');
 
   // Filter mentees strictly assigned to current mentor across devices
-  const normEmail = currentMentor.email ? currentMentor.email.trim().toLowerCase() : '';
-  const normPhone = currentMentor.phone ? currentMentor.phone.replace(/\D/g, '').slice(-10) : '';
-
-  const mentees = students.filter((s) => {
-    const isDirectMentorId = s.mentorId === currentMentor.id;
-    const isAssigned = currentMentor.assignedMenteeIds && currentMentor.assignedMenteeIds.includes(s.id);
-    const isCreatorEmail = Boolean(normEmail && s.creatorEmail && s.creatorEmail.trim().toLowerCase() === normEmail);
-    const isCreatedBy = Boolean(normEmail && s.createdBy && s.createdBy.trim().toLowerCase() === normEmail);
-
-    return isDirectMentorId || isAssigned || isCreatorEmail || isCreatedBy;
-  });
+  const mentees = students.filter((s) =>
+    isStudentOfMentor(s, currentMentor, userEmail, currentMentor?.phone)
+  );
 
   const displayMentees = mentees;
   const unreadUpdates = teacherUpdates.filter((u) => !u.isRead);

@@ -134,7 +134,7 @@ export const AddNewMenteeModal: React.FC<AddNewMenteeModalProps> = ({
       email: email.trim(),
       mentorId: currentMentor.id,
       mentorName: currentMentor.name,
-      creatorEmail: currentMentor.email,
+      creatorEmail: currentMentor.email || currentMentor.phone || '',
       createdBy: currentMentor.name,
       subjects: initialSubjects,
       lastModified: Date.now(),

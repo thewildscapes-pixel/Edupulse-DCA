@@ -41,6 +41,7 @@ import {
   verifyAndSyncCloudData,
   reconcileStudentRecords,
 } from './lib/firebase';
+import { isStudentOfMentor } from './utils/ownership';
 
 export default function App() {
   const [userEmail, setUserEmail] = useState<string>(() => {
@@ -427,7 +428,26 @@ export default function App() {
         (normEmail && m.email && m.email.trim().toLowerCase() === normEmail) ||
         (normPhone && m.phone && m.phone.replace(/\D/g, '').slice(-10) === normPhone)
     );
-    if (existing) return existing;
+
+    const mentorForMatching = existing || {
+      id: targetId,
+      name: userEmail.split('@')[0] || 'Faculty',
+      email: userEmail.trim(),
+      phone: userPhone.trim(),
+    };
+
+    // Auto-link all matching student IDs for this mentor across devices
+    const matchedStudentIds = students
+      .filter((s) => isStudentOfMentor(s, mentorForMatching, userEmail, userPhone))
+      .map((s) => s.id);
+
+    if (existing) {
+      const mergedMenteeIds = Array.from(new Set([...(existing.assignedMenteeIds || []), ...matchedStudentIds]));
+      return {
+        ...existing,
+        assignedMenteeIds: mergedMenteeIds,
+      };
+    }
 
     const namePart = userEmail.split('@')[0] || 'Faculty';
     const formattedName = namePart
@@ -442,10 +462,10 @@ export default function App() {
       department: 'Physics',
       email: userEmail.trim(),
       phone: userPhone.trim() || '+91 94350 00000',
-      assignedMenteeIds: [],
+      assignedMenteeIds: matchedStudentIds,
       isPreloaded: false,
     };
-  }, [userEmail, userPhone, mentors]);
+  }, [userEmail, userPhone, mentors, students]);
 
   // Ensure active logged-in faculty appears in faculty & mentor registry and Firestore
   useEffect(() => {
@@ -698,9 +718,9 @@ export default function App() {
         return updated;
       }
 
-      // Collect any students created by or associated with this email
+      // Collect any students created by or associated with this email, phone, or mentor ID across devices
       const matchedStudentIds = students
-        .filter((s) => (s.creatorEmail && s.creatorEmail.trim().toLowerCase() === normEmail) || s.mentorId === targetId)
+        .filter((s) => isStudentOfMentor(s, { id: targetId, email: finalEmail, phone: finalPhone, name: mentorProfile?.name }, finalEmail, finalPhone))
         .map((s) => s.id);
 
       const newMentor: Mentor = {
@@ -912,6 +932,7 @@ export default function App() {
             students={students}
             currentMentor={currentMentor}
             userEmail={userEmail}
+            userPhone={userPhone}
             currentRole={currentRole}
             teacherUpdates={teacherUpdates}
             onNavigate={(tab, studentId) => handleNavigateWithStudent(tab, studentId)}

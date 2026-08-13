@@ -173,7 +173,7 @@ export const AssessmentCenter: React.FC<AssessmentCenterProps> = ({
         category: totalInternal < 20 ? 'Critical Attention' : 'Good',
         mentorId: currentMentor.id,
         mentorName: currentMentor.name,
-        creatorEmail: userEmail,
+        creatorEmail: userEmail || currentMentor.email || currentMentor.phone || '',
         createdBy: currentMentor.name,
         subjects: [newSubjectEntry],
       };

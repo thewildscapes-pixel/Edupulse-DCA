@@ -39,6 +39,7 @@ interface EducatorHomeProps {
   students: Student[];
   currentMentor: Mentor;
   userEmail: string;
+  userPhone?: string;
   currentRole: Role;
   teacherUpdates?: TeacherUpdateLog[];
   onNavigate: (tab: string, studentId?: string) => void;
@@ -52,6 +53,7 @@ export const EducatorHome: React.FC<EducatorHomeProps> = ({
   students,
   currentMentor,
   userEmail,
+  userPhone,
   currentRole,
   teacherUpdates = [],
   onNavigate,
@@ -67,7 +69,7 @@ export const EducatorHome: React.FC<EducatorHomeProps> = ({
 
   // Filter students based on Educator subject roster scope
   const educatorSubjectStudents = students.filter((s) =>
-    isEducatorSubjectStudent(s, userEmail, currentMentor?.name || '', teacherUpdates)
+    isEducatorSubjectStudent(s, userEmail, currentMentor?.name || '', teacherUpdates, userPhone || currentMentor?.phone, currentMentor)
   );
 
   // Apply roster scope preference
