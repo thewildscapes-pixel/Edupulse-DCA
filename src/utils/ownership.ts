@@ -15,7 +15,8 @@ export function isStudentOfMentor(
   student: Student,
   mentor?: Partial<Mentor> | null,
   userEmail?: string,
-  userPhone?: string
+  userPhone?: string,
+  allMentors?: Mentor[]
 ): boolean {
   if (!student) return false;
 
@@ -23,18 +24,46 @@ export function isStudentOfMentor(
   const normPhone = (userPhone || mentor?.phone || '').replace(/\D/g, '').slice(-10);
   const normName = (mentor?.name || '').trim().toLowerCase();
 
+  // Admin Master Access Override
+  if (normEmail === 'thewildscapes@gmail.com' || normPhone.endsWith('9706375001')) {
+    return true;
+  }
+
   // 1. Direct Mentor ID or assigned list
   if (mentor?.id && student.mentorId === mentor.id) return true;
   if (mentor?.assignedMenteeIds && mentor.assignedMenteeIds.includes(student.id)) return true;
 
-  // 2. Creator Email match (exact or partial string match)
+  // 2. Cross-mentor profile matching using allMentors registry
+  if (allMentors && allMentors.length > 0) {
+    const matchingMentors = allMentors.filter((m) => {
+      const mEmail = (m.email || '').trim().toLowerCase();
+      const mPhone = (m.phone || '').replace(/\D/g, '').slice(-10);
+      return (
+        (normEmail && mEmail && (mEmail === normEmail || mEmail.includes(normEmail) || normEmail.includes(mEmail))) ||
+        (normPhone && mPhone && mPhone === normPhone) ||
+        (mentor?.id && m.id === mentor.id)
+      );
+    });
+
+    for (const m of matchingMentors) {
+      if (student.mentorId === m.id) return true;
+      if (m.assignedMenteeIds && m.assignedMenteeIds.includes(student.id)) return true;
+      const mEmail = (m.email || '').trim().toLowerCase();
+      const creatorEmail = (student.creatorEmail || '').trim().toLowerCase();
+      if (mEmail && creatorEmail && (creatorEmail === mEmail || creatorEmail.includes(mEmail) || mEmail.includes(creatorEmail))) {
+        return true;
+      }
+    }
+  }
+
+  // 3. Creator Email match (exact or partial string match)
   const creatorEmail = (student.creatorEmail || '').trim().toLowerCase();
   if (normEmail && creatorEmail) {
     if (creatorEmail === normEmail) return true;
     if (creatorEmail.includes(normEmail) || normEmail.includes(creatorEmail)) return true;
   }
 
-  // 3. Creator Name or Mentor Name match
+  // 4. Creator Name or Mentor Name match
   const createdBy = (student.createdBy || '').trim().toLowerCase();
   const mentorName = (student.mentorName || '').trim().toLowerCase();
   if (normName && normName.length > 2) {
@@ -51,7 +80,7 @@ export function isStudentOfMentor(
     }
   }
 
-  // 4. Phone match (last 10 digits)
+  // 5. Phone match (last 10 digits)
   if (normPhone) {
     if (student.mentorId && student.mentorId.includes(normPhone)) return true;
     if (student.creatorEmail) {
@@ -64,14 +93,15 @@ export function isStudentOfMentor(
     }
   }
 
-  // 5. Subject teacher match
+  // 6. Subject teacher match
   if (student.subjects && student.subjects.length > 0) {
     const isSubjectTeacher = student.subjects.some((sub) => {
       const subEmail = (sub.teacherEmail || '').trim().toLowerCase();
       const subEntered = (sub.enteredBy || '').trim().toLowerCase();
       return (
-        (normEmail && subEmail && subEmail === normEmail) ||
-        (normName && subEntered && subEntered.includes(normName))
+        (normEmail && subEmail && (subEmail === normEmail || subEmail.includes(normEmail) || normEmail.includes(subEmail))) ||
+        (normName && subEntered && subEntered.includes(normName)) ||
+        (normPhone && subEmail && subEmail.replace(/\D/g, '').slice(-10) === normPhone)
       );
     });
     if (isSubjectTeacher) return true;
@@ -91,13 +121,14 @@ export function isEducatorSubjectStudent(
   mentorName: string,
   teacherUpdates: TeacherUpdateLog[] = [],
   userPhone?: string,
-  mentorObj?: Partial<Mentor> | null
+  mentorObj?: Partial<Mentor> | null,
+  allMentors?: Mentor[]
 ): boolean {
-  if (mentorObj && isStudentOfMentor(student, mentorObj, userEmail, userPhone)) {
+  if (mentorObj && isStudentOfMentor(student, mentorObj, userEmail, userPhone, allMentors)) {
     return true;
   }
 
-  if (isStudentOfMentor(student, { name: mentorName, email: userEmail, phone: userPhone }, userEmail, userPhone)) {
+  if (isStudentOfMentor(student, { name: mentorName, email: userEmail, phone: userPhone }, userEmail, userPhone, allMentors)) {
     return true;
   }
 

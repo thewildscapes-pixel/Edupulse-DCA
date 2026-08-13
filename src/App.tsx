@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { GraduationCap, Loader2 } from 'lucide-react';
+import { GraduationCap, Loader2, CheckCircle } from 'lucide-react';
 import { Role, Student, Mentor, TeacherUpdateLog, Department } from './types';
 import { INITIAL_STUDENTS, INITIAL_MENTORS } from './data/mockData';
 
@@ -103,8 +103,16 @@ export default function App() {
     localStorage.removeItem('edupulse_faculty_email');
     localStorage.removeItem('edupulse_faculty_phone');
     localStorage.removeItem('edupulse_faculty_role');
+    localStorage.removeItem('edupulse_students');
+    localStorage.removeItem('edupulse_mentors');
+    localStorage.removeItem('edupulse_teacher_updates');
+    localStorage.removeItem('edupulse_deleted_students');
+    localStorage.removeItem('edupulse_deleted_mentors');
     setUserEmail('');
     setUserPhone('');
+    setStudents([]);
+    setMentors([]);
+    setTeacherUpdates([]);
     setIsWalkthroughOpen(true);
   };
 
@@ -136,6 +144,49 @@ export default function App() {
   const [isEditProfileOpen, setIsEditProfileOpen] = useState<boolean>(false);
   const [editingMentor, setEditingMentor] = useState<Mentor | null>(null);
   const [isAddingMentor, setIsAddingMentor] = useState<boolean>(false);
+  const [isForceRefreshing, setIsForceRefreshing] = useState<boolean>(false);
+  const [refreshToastMessage, setRefreshToastMessage] = useState<string | null>(null);
+
+  const handleForceRefresh = async () => {
+    setIsForceRefreshing(true);
+    try {
+      // 1. Completely purge local storage caches and deleted trackers
+      localStorage.removeItem('edupulse_students');
+      localStorage.removeItem('edupulse_mentors');
+      localStorage.removeItem('edupulse_teacher_updates');
+      localStorage.removeItem('edupulse_deleted_students');
+      localStorage.removeItem('edupulse_deleted_mentors');
+
+      // 2. Perform hard, atomic re-fetch of all collections from Firestore cloud & server
+      const syncResult = await verifyAndSyncCloudData();
+
+      // 3. Atomically overwrite React state & re-populate local storage
+      const freshStudents = syncResult.students || [];
+      const freshMentors = syncResult.mentors || [];
+      const freshUpdates = syncResult.teacherUpdates || [];
+
+      setStudents(freshStudents);
+      setMentors(freshMentors);
+      setTeacherUpdates(freshUpdates);
+
+      localStorage.setItem('edupulse_students', JSON.stringify(freshStudents));
+      localStorage.setItem('edupulse_mentors', JSON.stringify(freshMentors));
+      localStorage.setItem('edupulse_teacher_updates', JSON.stringify(freshUpdates));
+
+      setRefreshToastMessage(`Local cache purged & re-synced! ${freshStudents.length} student records loaded from Firestore.`);
+      setTimeout(() => {
+        setRefreshToastMessage(null);
+      }, 4500);
+    } catch (err) {
+      console.error('Force refresh error:', err);
+      setRefreshToastMessage('Error refreshing data from cloud. Please check network connection.');
+      setTimeout(() => {
+        setRefreshToastMessage(null);
+      }, 4500);
+    } finally {
+      setIsForceRefreshing(false);
+    }
+  };
 
   // App-wide data state backed by Firestore cloud database & localStorage
   const [students, setStudents] = useState<Student[]>(() => {
@@ -181,78 +232,20 @@ export default function App() {
         // Step 1: Ensure initial cloud seed if empty
         await seedInitialCloudDataIfEmpty(INITIAL_STUDENTS, INITIAL_MENTORS);
 
-        // Step 2: Fetch latest snapshot from Firestore to re-hydrate state & localStorage
+        // Step 2: Fetch latest snapshot from Firestore / server API to re-hydrate state & localStorage
         const syncResult = await verifyAndSyncCloudData();
 
-        let deletedStudentIds: string[] = [];
-        try {
-          deletedStudentIds = JSON.parse(localStorage.getItem('edupulse_deleted_students') || '[]');
-        } catch (e) {}
-
-        let deletedMentorIds: string[] = [];
-        try {
-          deletedMentorIds = JSON.parse(localStorage.getItem('edupulse_deleted_mentors') || '[]');
-        } catch (e) {}
-
-        // Merge local students with cloud students using dedicated reconciliation check
-        let localStudents: Student[] = [];
-        try {
-          const saved = localStorage.getItem('edupulse_students');
-          if (saved) localStudents = JSON.parse(saved);
-        } catch (e) {}
-
-        const finalStudents = reconcileStudentRecords(localStudents, syncResult.students || []);
-
-        // Merge local mentors with cloud mentors
-        let localMentors: Mentor[] = [];
-        try {
-          const saved = localStorage.getItem('edupulse_mentors');
-          if (saved) localMentors = JSON.parse(saved);
-        } catch (e) {}
-
-        const mentorMap = new Map<string, Mentor>();
-        localMentors.forEach((m) => {
-          if (!deletedMentorIds.includes(m.id)) mentorMap.set(m.id, m);
-        });
-        (syncResult.mentors || []).forEach((m) => {
-          if (!deletedMentorIds.includes(m.id)) mentorMap.set(m.id, m);
-        });
-        const finalMentors = Array.from(mentorMap.values());
-
-        // Merge teacher updates
-        let localUpdates: TeacherUpdateLog[] = [];
-        try {
-          const saved = localStorage.getItem('edupulse_teacher_updates');
-          if (saved) localUpdates = JSON.parse(saved);
-        } catch (e) {}
-
-        const updateMap = new Map<string, TeacherUpdateLog>();
-        localUpdates.forEach((u) => updateMap.set(u.id, u));
-        (syncResult.teacherUpdates || []).forEach((u) => updateMap.set(u.id, u));
-        const finalUpdates = Array.from(updateMap.values());
-
         if (isMounted) {
+          const finalStudents = syncResult.students || [];
+          const finalMentors = syncResult.mentors || [];
+          const finalUpdates = syncResult.teacherUpdates || [];
+
           setStudents(finalStudents);
           setMentors(finalMentors);
           setTeacherUpdates(finalUpdates);
           localStorage.setItem('edupulse_students', JSON.stringify(finalStudents));
           localStorage.setItem('edupulse_mentors', JSON.stringify(finalMentors));
           localStorage.setItem('edupulse_teacher_updates', JSON.stringify(finalUpdates));
-
-          // Background sync any local items not yet in Firestore
-          const missingStudentsInCloud = finalStudents.filter(
-            (s) => !(syncResult.students || []).some((cs) => cs.id === s.id)
-          );
-          if (missingStudentsInCloud.length > 0) {
-            saveStudentsBatchToCloud(missingStudentsInCloud);
-          }
-
-          const missingMentorsInCloud = finalMentors.filter(
-            (m) => !(syncResult.mentors || []).some((cm) => cm.id === m.id)
-          );
-          if (missingMentorsInCloud.length > 0) {
-            saveMentorsBatchToCloud(missingMentorsInCloud);
-          }
         }
       } catch (err) {
         console.warn('Initialization sync warning:', err);
@@ -346,12 +339,9 @@ export default function App() {
     const performCloudSync = async () => {
       try {
         const syncResult = await verifyAndSyncCloudData();
-        if (syncResult.students && syncResult.students.length > 0) {
-          setStudents((prev) => {
-            const merged = reconcileStudentRecords(prev, syncResult.students);
-            localStorage.setItem('edupulse_students', JSON.stringify(merged));
-            return merged;
-          });
+        if (syncResult.students) {
+          setStudents(syncResult.students);
+          localStorage.setItem('edupulse_students', JSON.stringify(syncResult.students));
         }
         if (syncResult.mentors && syncResult.mentors.length > 0) {
           setMentors(syncResult.mentors);
@@ -438,7 +428,7 @@ export default function App() {
 
     // Auto-link all matching student IDs for this mentor across devices
     const matchedStudentIds = students
-      .filter((s) => isStudentOfMentor(s, mentorForMatching, userEmail, userPhone))
+      .filter((s) => isStudentOfMentor(s, mentorForMatching, userEmail, userPhone, mentors))
       .map((s) => s.id);
 
     if (existing) {
@@ -656,7 +646,7 @@ export default function App() {
     setIsEditProfileOpen(false);
   };
 
-  const handleSelectRoleFromWalkthrough = (
+  const handleSelectRoleFromWalkthrough = async (
     role: Role, 
     defaultTab: string, 
     email?: string,
@@ -679,6 +669,29 @@ export default function App() {
     localStorage.setItem('edupulse_faculty_email', finalEmail);
     localStorage.setItem('edupulse_faculty_phone', finalPhone);
     localStorage.setItem('edupulse_faculty_role', role);
+
+    // Clear stale deleted item trackers on login
+    localStorage.removeItem('edupulse_deleted_students');
+    localStorage.removeItem('edupulse_deleted_mentors');
+
+    // Trigger full re-hydration from cloud source of truth upon login on this device
+    try {
+      const syncResult = await verifyAndSyncCloudData();
+      if (syncResult.students) {
+        setStudents(syncResult.students);
+        localStorage.setItem('edupulse_students', JSON.stringify(syncResult.students));
+      }
+      if (syncResult.mentors && syncResult.mentors.length > 0) {
+        setMentors(syncResult.mentors);
+        localStorage.setItem('edupulse_mentors', JSON.stringify(syncResult.mentors));
+      }
+      if (syncResult.teacherUpdates && syncResult.teacherUpdates.length > 0) {
+        setTeacherUpdates(syncResult.teacherUpdates);
+        localStorage.setItem('edupulse_teacher_updates', JSON.stringify(syncResult.teacherUpdates));
+      }
+    } catch (e) {
+      console.warn('Re-hydration on login warning:', e);
+    }
 
     let updatedMentorToSync: Mentor | null = null;
 
@@ -720,7 +733,7 @@ export default function App() {
 
       // Collect any students created by or associated with this email, phone, or mentor ID across devices
       const matchedStudentIds = students
-        .filter((s) => isStudentOfMentor(s, { id: targetId, email: finalEmail, phone: finalPhone, name: mentorProfile?.name }, finalEmail, finalPhone))
+        .filter((s) => isStudentOfMentor(s, { id: targetId, email: finalEmail, phone: finalPhone, name: mentorProfile?.name }, finalEmail, finalPhone, prev))
         .map((s) => s.id);
 
       const newMentor: Mentor = {
@@ -750,6 +763,25 @@ export default function App() {
 
   const handleAddStudent = (newStudent: Student) => {
     const studentWithTs = { ...newStudent, lastModified: newStudent.lastModified || Date.now() };
+
+    // Automatically link student to current mentor assigned list
+    const activeMentorId = currentMentor.id;
+    setMentors((prev) => {
+      const updatedMentors = prev.map((m) => {
+        if (m.id === activeMentorId || m.id === studentWithTs.mentorId) {
+          const currentMentees = m.assignedMenteeIds || [];
+          if (!currentMentees.includes(studentWithTs.id)) {
+            const updatedM = { ...m, assignedMenteeIds: [...currentMentees, studentWithTs.id] };
+            saveMentorToCloud(updatedM);
+            return updatedM;
+          }
+        }
+        return m;
+      });
+      localStorage.setItem('edupulse_mentors', JSON.stringify(updatedMentors));
+      return updatedMentors;
+    });
+
     setStudents((prev) => {
       const updated = [studentWithTs, ...prev];
       localStorage.setItem('edupulse_students', JSON.stringify(updated));
@@ -864,6 +896,8 @@ export default function App() {
         userPhone={userPhone}
         isAdmin={isAdmin}
         onLogout={handleLogout}
+        onForceRefresh={handleForceRefresh}
+        isRefreshing={isForceRefreshing}
       />
 
       {/* Walkthrough & Role Selection Modal */}
@@ -931,6 +965,7 @@ export default function App() {
           <EducatorHome
             students={students}
             currentMentor={currentMentor}
+            mentors={mentors}
             userEmail={userEmail}
             userPhone={userPhone}
             currentRole={currentRole}
@@ -1059,6 +1094,14 @@ export default function App() {
 
       {/* App-Wide Toast Notification for Offline Usage & Backup/Sync Prompt */}
       <OfflineBackupSyncToast students={students} mentors={mentors} />
+
+      {/* Force Refresh Notification Toast */}
+      {refreshToastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center space-x-3 text-xs font-semibold border border-slate-700 animate-in fade-in slide-in-from-bottom-3 duration-200">
+          <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{refreshToastMessage}</span>
+        </div>
+      )}
     </div>
   );
 }

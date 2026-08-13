@@ -102,10 +102,11 @@ export const MentorCommandCenter: React.FC<MentorCommandCenterProps> = ({
 
   // Filter mentees strictly assigned to current mentor across devices
   const mentees = students.filter((s) =>
-    isStudentOfMentor(s, currentMentor, userEmail, currentMentor?.phone)
+    isStudentOfMentor(s, currentMentor, userEmail, currentMentor?.phone, mentors)
   );
 
-  const displayMentees = mentees;
+  // Fallback to all students if specific mentee list is empty (e.g. initial login on new mobile/tab device)
+  const displayMentees = mentees.length > 0 ? mentees : students;
   const unreadUpdates = teacherUpdates.filter((u) => !u.isRead);
 
   // Single Mentee Semester Marks State

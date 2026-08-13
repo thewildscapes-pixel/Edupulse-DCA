@@ -328,30 +328,43 @@ export function reconcileStudentRecords(
 
   const studentMap = new Map<string, Student>();
 
-  // 1. Populate non-deleted local students
+  if (cloudStudents && cloudStudents.length > 0) {
+    // 1. Populate base map from cloud source of truth
+    cloudStudents.forEach((cloud) => {
+      if (!deletedStudentIds.includes(cloud.id)) {
+        studentMap.set(cloud.id, cloud);
+      }
+    });
+
+    // 2. Reconcile with local storage entries
+    const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+    localStudents.forEach((local) => {
+      if (deletedStudentIds.includes(local.id)) return;
+
+      const cloud = studentMap.get(local.id);
+      if (cloud) {
+        // If local version has a strictly newer modification timestamp, prefer local
+        const localTime = local.lastModified || 0;
+        const cloudTime = cloud.lastModified || 0;
+        if (localTime > cloudTime) {
+          studentMap.set(local.id, local);
+        }
+      } else {
+        // Only retain local-only students if created/modified very recently (e.g. pending offline sync)
+        const localTime = local.lastModified || 0;
+        if (localTime > fiveMinutesAgo) {
+          studentMap.set(local.id, local);
+        }
+      }
+    });
+
+    return Array.from(studentMap.values());
+  }
+
+  // Fallback if cloud dataset is empty: return non-deleted local students
   localStudents.forEach((local) => {
     if (!deletedStudentIds.includes(local.id)) {
       studentMap.set(local.id, local);
-    }
-  });
-
-  // 2. Compare lastModified timestamp with cloud students
-  cloudStudents.forEach((cloud) => {
-    if (deletedStudentIds.includes(cloud.id)) return;
-
-    const local = studentMap.get(cloud.id);
-    if (!local) {
-      studentMap.set(cloud.id, cloud);
-    } else {
-      const localTime = local.lastModified || 0;
-      const cloudTime = cloud.lastModified || 0;
-
-      // Ensure the most recent version always takes precedence
-      if (cloudTime >= localTime) {
-        studentMap.set(cloud.id, cloud);
-      } else {
-        studentMap.set(cloud.id, local);
-      }
     }
   });
 
@@ -454,20 +467,10 @@ export async function verifyAndSyncCloudData(): Promise<SyncVerificationResult> 
 
     const reconciledStudents = reconcileStudentRecords(localStudents, combinedCloudStudents);
 
-    // Push local reconciled state to server database to ensure newly added items on this device are saved centrally
-    if (reconciledStudents.length > 0 || combinedCloudMentors.length > 0) {
-      syncServerData({
-        students: reconciledStudents,
-        mentors: combinedCloudMentors,
-        teacherUpdates: combinedCloudUpdates,
-      }).catch(() => {});
-    }
-
+    // Save server source of truth to localStorage
+    localStorage.setItem('edupulse_students', JSON.stringify(reconciledStudents));
     if (combinedCloudMentors.length > 0) {
       localStorage.setItem('edupulse_mentors', JSON.stringify(combinedCloudMentors));
-    }
-    if (reconciledStudents.length > 0) {
-      localStorage.setItem('edupulse_students', JSON.stringify(reconciledStudents));
     }
     if (combinedCloudUpdates.length > 0) {
       localStorage.setItem('edupulse_teacher_updates', JSON.stringify(combinedCloudUpdates));

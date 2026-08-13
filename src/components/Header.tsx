@@ -13,7 +13,8 @@ import {
   LogOut, 
   HelpCircle as HelpIcon,
   User,
-  FileText
+  FileText,
+  RefreshCw
 } from 'lucide-react';
 import { Role } from '../types';
 import { CollegeLogo } from './CollegeLogo';
@@ -28,6 +29,8 @@ interface HeaderProps {
   userPhone: string;
   isAdmin?: boolean;
   onLogout: () => void;
+  onForceRefresh?: () => Promise<void>;
+  isRefreshing?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -40,6 +43,8 @@ export const Header: React.FC<HeaderProps> = ({
   userPhone,
   isAdmin = false,
   onLogout,
+  onForceRefresh,
+  isRefreshing = false,
 }) => {
   const allNavTabs = [
     { id: 'home', label: 'Educator Home', icon: LayoutDashboard, roles: ['educator', 'admin'] },
@@ -87,6 +92,19 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* User & Role Controls */}
           <div className="flex items-center flex-wrap gap-2 sm:gap-3">
+            {/* Force Refresh Data Button */}
+            {onForceRefresh && (
+              <button
+                onClick={onForceRefresh}
+                disabled={isRefreshing}
+                className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors disabled:opacity-60 shadow-2xs"
+                title="Purge Local Storage Cache & Force Atomic Sync from Firestore Cloud"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-[#1976d2] ${isRefreshing ? 'animate-spin' : ''}`} />
+                <span>{isRefreshing ? 'Syncing...' : 'Force Refresh Data'}</span>
+              </button>
+            )}
+
             {/* Walkthrough Button */}
             <button
               onClick={onOpenWalkthrough}

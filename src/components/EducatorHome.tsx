@@ -38,6 +38,7 @@ import { isEducatorSubjectStudent } from '../utils/ownership';
 interface EducatorHomeProps {
   students: Student[];
   currentMentor: Mentor;
+  mentors?: Mentor[];
   userEmail: string;
   userPhone?: string;
   currentRole: Role;
@@ -52,6 +53,7 @@ interface EducatorHomeProps {
 export const EducatorHome: React.FC<EducatorHomeProps> = ({
   students,
   currentMentor,
+  mentors = [],
   userEmail,
   userPhone,
   currentRole,
@@ -69,11 +71,11 @@ export const EducatorHome: React.FC<EducatorHomeProps> = ({
 
   // Filter students based on Educator subject roster scope
   const educatorSubjectStudents = students.filter((s) =>
-    isEducatorSubjectStudent(s, userEmail, currentMentor?.name || '', teacherUpdates, userPhone || currentMentor?.phone, currentMentor)
+    isEducatorSubjectStudent(s, userEmail, currentMentor?.name || '', teacherUpdates, userPhone || currentMentor?.phone, currentMentor, mentors)
   );
 
-  // Apply roster scope preference
-  const rosterStudents = rosterScope === 'my_subjects' ? educatorSubjectStudents : students;
+  // Apply roster scope preference, falling back to all students if my_subjects yields 0 (cross-device fallback)
+  const rosterStudents = rosterScope === 'my_subjects' ? (educatorSubjectStudents.length > 0 ? educatorSubjectStudents : students) : students;
 
   const totalStudents = rosterStudents.length;
   const criticalStudents = rosterStudents.filter((s) => s.category === 'Critical Attention' || s.overallAttendance < 75);
