@@ -40,6 +40,7 @@ import {
   seedInitialCloudDataIfEmpty,
   verifyAndSyncCloudData,
   reconcileStudentRecords,
+  reconcileMentorRecords,
 } from './lib/firebase';
 import { isStudentOfMentor } from './utils/ownership';
 
@@ -51,15 +52,7 @@ export default function App() {
     return localStorage.getItem('edupulse_faculty_phone') || '';
   });
   const [currentRole, setCurrentRole] = useState<Role>(() => {
-    // Check if student opened a quiz link via WhatsApp / Google Form direct link
-  const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-  const publicQuizId = urlParams?.get('quizId');
-
-  if (publicQuizId) {
-    return <StandalonePublicQuiz quizId={publicQuizId} />;
-  }
-
-  return (localStorage.getItem('edupulse_faculty_role') as Role) || 'educator';
+    return (localStorage.getItem('edupulse_faculty_role') as Role) || 'educator';
   });
   const [isWalkthroughOpen, setIsWalkthroughOpen] = useState<boolean>(() => {
     return !localStorage.getItem('edupulse_faculty_email');
@@ -103,28 +96,33 @@ export default function App() {
     localStorage.removeItem('edupulse_faculty_email');
     localStorage.removeItem('edupulse_faculty_phone');
     localStorage.removeItem('edupulse_faculty_role');
-    localStorage.removeItem('edupulse_students');
-    localStorage.removeItem('edupulse_mentors');
-    localStorage.removeItem('edupulse_teacher_updates');
-    localStorage.removeItem('edupulse_deleted_students');
-    localStorage.removeItem('edupulse_deleted_mentors');
+    localStorage.removeItem('edupulse_faculty_name');
+    localStorage.removeItem('edupulse_faculty_designation');
+    localStorage.removeItem('edupulse_faculty_department');
     setUserEmail('');
     setUserPhone('');
-    setStudents([]);
-    setMentors([]);
-    setTeacherUpdates([]);
     setIsWalkthroughOpen(true);
   };
 
-  // Enforce Access Restriction for Blocked Logins
+  // Enforce Access Restriction for Blocked Logins with strict non-empty validation
   useEffect(() => {
-    if (userEmail || userPhone) {
+    if ((userEmail && userEmail.trim().length > 3) || (userPhone && userPhone.replace(/\D/g, '').length >= 10)) {
       try {
         const blockedLogins: string[] = JSON.parse(localStorage.getItem('edupulse_blocked_logins') || '[]');
         const cleanEmail = userEmail.trim().toLowerCase();
         const cleanDigits = userPhone.replace(/\D/g, '').slice(-10);
 
-        if (blockedLogins.includes(cleanEmail) || (cleanDigits && blockedLogins.includes(cleanDigits))) {
+        const isBlocked = blockedLogins.some((b) => {
+          if (!b || typeof b !== 'string' || b.trim().length === 0) return false;
+          const bTrimmed = b.trim().toLowerCase();
+          const bDigits = b.replace(/\D/g, '').slice(-10);
+          return (
+            (cleanEmail && cleanEmail === bTrimmed) ||
+            (cleanDigits && cleanDigits.length === 10 && bDigits === cleanDigits)
+          );
+        });
+
+        if (isBlocked) {
           alert('Access Revoked: Your account or WhatsApp phone number has been restricted by Digboi College Admin.');
           handleLogout();
         }
@@ -194,7 +192,7 @@ export default function App() {
     if (saved) {
       try {
         const parsed: Student[] = JSON.parse(saved);
-        return parsed.filter((s) => !['s_101', 's_102', 's_103', 's_104', 's_105'].includes(s.id));
+        return Array.isArray(parsed) ? parsed : [];
       } catch (e) {
         return [];
       }
@@ -207,7 +205,7 @@ export default function App() {
     if (saved) {
       try {
         const parsed: Mentor[] = JSON.parse(saved);
-        return parsed.filter((m) => !['m_1', 'm_2', 'm_3', 'm_4'].includes(m.id));
+        return Array.isArray(parsed) ? parsed : [];
       } catch (e) {
         return [];
       }
@@ -276,26 +274,13 @@ export default function App() {
     const unsubMentors = subscribeMentors((cloudMentors) => {
       if (!cloudMentors) return;
 
-      let deletedMentorIds: string[] = [];
-      try {
-        deletedMentorIds = JSON.parse(localStorage.getItem('edupulse_deleted_mentors') || '[]');
-      } catch (e) {}
-
       let currentLocal: Mentor[] = [];
       try {
         const saved = localStorage.getItem('edupulse_mentors');
         if (saved) currentLocal = JSON.parse(saved);
       } catch (e) {}
 
-      const mentorMap = new Map<string, Mentor>();
-      currentLocal.forEach((m) => {
-        if (!deletedMentorIds.includes(m.id)) mentorMap.set(m.id, m);
-      });
-      cloudMentors.forEach((m) => {
-        if (!deletedMentorIds.includes(m.id)) mentorMap.set(m.id, m);
-      });
-
-      const mergedMentors = Array.from(mentorMap.values());
+      const mergedMentors = reconcileMentorRecords(currentLocal, cloudMentors);
       setMentors(mergedMentors);
       localStorage.setItem('edupulse_mentors', JSON.stringify(mergedMentors));
     });
@@ -412,6 +397,10 @@ export default function App() {
     const normPhone = userPhone.replace(/\D/g, '').slice(-10);
     const targetId = getMentorId(userEmail, userPhone);
 
+    const savedName = localStorage.getItem('edupulse_faculty_name');
+    const savedDept = localStorage.getItem('edupulse_faculty_department') as Department | null;
+    const savedDesig = localStorage.getItem('edupulse_faculty_designation');
+
     const existing = mentors.find(
       (m) =>
         m.id === targetId ||
@@ -419,9 +408,12 @@ export default function App() {
         (normPhone && m.phone && m.phone.replace(/\D/g, '').slice(-10) === normPhone)
     );
 
+    const isGenericName = (n?: string) =>
+      !n || n.includes('Faculty Member') || n.startsWith('Prof. Faculty');
+
     const mentorForMatching = existing || {
       id: targetId,
-      name: userEmail.split('@')[0] || 'Faculty',
+      name: savedName || userEmail.split('@')[0] || 'Faculty',
       email: userEmail.trim(),
       phone: userPhone.trim(),
     };
@@ -435,6 +427,9 @@ export default function App() {
       const mergedMenteeIds = Array.from(new Set([...(existing.assignedMenteeIds || []), ...matchedStudentIds]));
       return {
         ...existing,
+        name: (savedName && !isGenericName(savedName)) ? savedName : existing.name,
+        department: savedDept || existing.department || 'Physics',
+        designation: savedDesig || existing.designation || 'Assistant Professor',
         assignedMenteeIds: mergedMenteeIds,
       };
     }
@@ -448,8 +443,9 @@ export default function App() {
 
     return {
       id: targetId,
-      name: `${title} ${formattedName}`,
-      department: 'Physics',
+      name: savedName || `${title} ${formattedName}`,
+      designation: savedDesig || 'Assistant Professor',
+      department: savedDept || 'Physics',
       email: userEmail.trim(),
       phone: userPhone.trim() || '+91 94350 00000',
       assignedMenteeIds: matchedStudentIds,
@@ -457,7 +453,7 @@ export default function App() {
     };
   }, [userEmail, userPhone, mentors, students]);
 
-  // Ensure active logged-in faculty appears in faculty & mentor registry and Firestore
+  // Ensure active logged-in faculty appears in local faculty registry safely without overriding custom cloud entries
   useEffect(() => {
     if (isLoading || !userEmail || !userEmail.trim()) return;
 
@@ -485,8 +481,6 @@ export default function App() {
         localStorage.setItem('edupulse_mentors', JSON.stringify(updated));
         return updated;
       });
-
-      saveMentorToCloud(currentMentor);
     }
   }, [userEmail, userPhone, mentors, isLoading, currentMentor]);
 
@@ -589,6 +583,9 @@ export default function App() {
       setUserPhone(finalPhone);
       localStorage.setItem('edupulse_faculty_email', finalEmail);
       localStorage.setItem('edupulse_faculty_phone', finalPhone);
+      localStorage.setItem('edupulse_faculty_name', profile.name);
+      localStorage.setItem('edupulse_faculty_designation', profile.designation);
+      localStorage.setItem('edupulse_faculty_department', profile.department);
     }
 
     let savedMentorObj: Mentor | null = null;
@@ -615,6 +612,7 @@ export default function App() {
           email: finalEmail,
           phone: finalPhone,
           assignedMenteeIds: profile.assignedMenteeIds || updated[idx].assignedMenteeIds || [],
+          lastModified: Date.now(),
         };
         savedMentorObj = updated[idx];
         localStorage.setItem('edupulse_mentors', JSON.stringify(updated));
@@ -630,6 +628,7 @@ export default function App() {
         phone: finalPhone,
         assignedMenteeIds: profile.assignedMenteeIds || students.map((s) => s.id),
         isPreloaded: false,
+        lastModified: Date.now(),
       };
       savedMentorObj = newMentor;
       const updated = [newMentor, ...prev];
@@ -669,6 +668,12 @@ export default function App() {
     localStorage.setItem('edupulse_faculty_email', finalEmail);
     localStorage.setItem('edupulse_faculty_phone', finalPhone);
     localStorage.setItem('edupulse_faculty_role', role);
+
+    if (mentorProfile) {
+      if (mentorProfile.name) localStorage.setItem('edupulse_faculty_name', mentorProfile.name);
+      if (mentorProfile.designation) localStorage.setItem('edupulse_faculty_designation', mentorProfile.designation);
+      if (mentorProfile.department) localStorage.setItem('edupulse_faculty_department', mentorProfile.department);
+    }
 
     // Clear stale deleted item trackers on login
     localStorage.removeItem('edupulse_deleted_students');
@@ -717,14 +722,19 @@ export default function App() {
         const isDefaultDesig = !existing.designation;
         const isDefaultDept = !existing.department;
 
+        const resolvedName = mentorProfile?.name || existing.name || localStorage.getItem('edupulse_faculty_name') || 'Dr. Deborshee Gogoi';
+        const resolvedDesig = mentorProfile?.designation || existing.designation || localStorage.getItem('edupulse_faculty_designation') || 'Assistant Professor';
+        const resolvedDept = (mentorProfile?.department || existing.department || localStorage.getItem('edupulse_faculty_department') || 'Physics') as Department;
+
         updated[idx] = {
           ...existing,
           id: targetId,
           email: finalEmail || existing.email,
           phone: finalPhone || existing.phone,
-          name: isDefaultName ? (mentorProfile?.name || existing.name || 'Dr. Deborshee Gogoi') : existing.name,
-          designation: isDefaultDesig ? (mentorProfile?.designation || 'Assistant Professor') : existing.designation,
-          department: isDefaultDept ? (mentorProfile?.department || 'Physics') : existing.department,
+          name: isDefaultName ? resolvedName : existing.name,
+          designation: isDefaultDesig ? resolvedDesig : existing.designation,
+          department: isDefaultDept ? resolvedDept : existing.department,
+          lastModified: Date.now(),
         };
         updatedMentorToSync = updated[idx];
         localStorage.setItem('edupulse_mentors', JSON.stringify(updated));
@@ -738,13 +748,14 @@ export default function App() {
 
       const newMentor: Mentor = {
         id: targetId,
-        name: mentorProfile?.name || `Dr. Deborshee Gogoi`,
-        designation: mentorProfile?.designation || 'Assistant Professor',
-        department: mentorProfile?.department || 'Physics',
+        name: mentorProfile?.name || localStorage.getItem('edupulse_faculty_name') || `Dr. Deborshee Gogoi`,
+        designation: mentorProfile?.designation || localStorage.getItem('edupulse_faculty_designation') || 'Assistant Professor',
+        department: (mentorProfile?.department || localStorage.getItem('edupulse_faculty_department') || 'Physics') as Department,
         email: finalEmail,
         phone: mentorProfile?.phone || finalPhone,
         assignedMenteeIds: matchedStudentIds.length > 0 ? matchedStudentIds : students.map((s) => s.id),
         isPreloaded: false,
+        lastModified: Date.now(),
       };
       updatedMentorToSync = newMentor;
       const updated = [newMentor, ...prev];

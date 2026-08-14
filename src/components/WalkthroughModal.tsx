@@ -670,16 +670,32 @@ const FacultyRoleLoginStep: React.FC<FacultyRoleLoginStepProps> = ({
     );
   }, [email, phone, initialEmail, initialPhone, mentors, currentMentor]);
 
-  // Mentor profile fields initialized from matched mentor if present
+  // Mentor profile fields initialized from matched mentor if present or localStorage
   const [mentorName, setMentorName] = useState(() => {
-    if (matchedMentor?.name) return matchedMentor.name;
+    if (matchedMentor?.name && !matchedMentor.name.includes('Faculty Member') && !matchedMentor.name.startsWith('Prof. Faculty')) {
+      return matchedMentor.name;
+    }
+    const savedName = localStorage.getItem('edupulse_faculty_name');
+    if (savedName) return savedName;
     const namePart = (initialEmail || 'faculty').split('@')[0];
     const formatted = namePart.replace(/[._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
     const isDr = namePart.toLowerCase().includes('dr');
     return isDr ? `Dr. ${formatted}` : `Prof. ${formatted}`;
   });
-  const [mentorDesignation, setMentorDesignation] = useState(matchedMentor?.designation || 'Assistant Professor');
-  const [mentorDept, setMentorDept] = useState<Department>(matchedMentor?.department || 'Physics');
+  const [mentorDesignation, setMentorDesignation] = useState(() => {
+    return (
+      matchedMentor?.designation ||
+      localStorage.getItem('edupulse_faculty_designation') ||
+      'Assistant Professor'
+    );
+  });
+  const [mentorDept, setMentorDept] = useState<Department>(() => {
+    return (
+      matchedMentor?.department ||
+      (localStorage.getItem('edupulse_faculty_department') as Department) ||
+      'Physics'
+    );
+  });
 
   React.useEffect(() => {
     if (initialEmail && initialEmail.trim()) {
@@ -692,7 +708,7 @@ const FacultyRoleLoginStep: React.FC<FacultyRoleLoginStepProps> = ({
 
   // Keep form fields synced if matched mentor profile is loaded from Firestore / local storage
   React.useEffect(() => {
-    if (matchedMentor && matchedMentor.name) {
+    if (matchedMentor && matchedMentor.name && !matchedMentor.name.includes('Faculty Member') && !matchedMentor.name.startsWith('Prof. Faculty')) {
       setMentorName(matchedMentor.name);
       if (matchedMentor.designation) {
         setMentorDesignation(matchedMentor.designation);

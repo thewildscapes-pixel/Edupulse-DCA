@@ -113,6 +113,7 @@ export interface Mentor {
   assignedMenteeIds: string[];
   isPreloaded?: boolean;
   designation?: string;
+  lastModified?: number;
 }
 
 export interface TeacherUpdateLog {

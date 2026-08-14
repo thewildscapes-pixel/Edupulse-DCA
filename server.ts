@@ -129,26 +129,41 @@ async function startServer() {
         const key = getMentorKey(m);
         const existing = mentorMap.get(key);
         if (existing) {
-          const isExistingGenericName = !existing.name || existing.name.includes('Faculty Member') || existing.name.startsWith('Prof. Faculty');
-          const isNewGenericName = !m.name || m.name.includes('Faculty Member') || m.name.startsWith('Prof. Faculty');
+          const isExistingGenericName = !existing.name || existing.name.includes('Faculty Member') || existing.name.startsWith('Prof. Faculty') || existing.name === 'Dr. Faculty';
+          const isNewGenericName = !m.name || m.name.includes('Faculty Member') || m.name.startsWith('Prof. Faculty') || m.name === 'Dr. Faculty';
 
-          let bestName = existing.name;
-          if (isExistingGenericName && !isNewGenericName) {
+          let bestName = m.name || existing.name;
+          if (isNewGenericName && !isExistingGenericName) {
+            bestName = existing.name;
+          } else if (!isNewGenericName) {
             bestName = m.name;
-          } else if (m.name && !isNewGenericName) {
-            bestName = m.name;
+          }
+
+          let bestDept = m.department || existing.department || 'Physics';
+          if (m.department && m.department !== 'Physics') {
+            bestDept = m.department;
+          } else if (existing.department && existing.department !== 'Physics') {
+            bestDept = existing.department;
+          }
+
+          let bestDesig = m.designation || existing.designation || 'Assistant Professor';
+          if (m.designation && m.designation !== 'Assistant Professor') {
+            bestDesig = m.designation;
+          } else if (existing.designation && existing.designation !== 'Assistant Professor') {
+            bestDesig = existing.designation;
           }
 
           const merged = {
             ...existing,
             ...m,
-            id: existing.id || m.id,
+            id: m.id || existing.id,
             name: bestName,
-            designation: (m.designation && m.designation !== 'Assistant Professor') ? m.designation : (existing.designation || m.designation || 'Assistant Professor'),
-            department: m.department || existing.department || 'Physics',
+            designation: bestDesig,
+            department: bestDept,
             email: m.email || existing.email,
             phone: m.phone || existing.phone,
             assignedMenteeIds: Array.from(new Set([...(existing.assignedMenteeIds || []), ...(m.assignedMenteeIds || [])])),
+            lastModified: Math.max(m.lastModified || 0, existing.lastModified || 0, Date.now()),
           };
           mentorMap.set(key, merged);
         } else {

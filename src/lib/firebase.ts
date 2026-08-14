@@ -328,47 +328,123 @@ export function reconcileStudentRecords(
 
   const studentMap = new Map<string, Student>();
 
-  if (cloudStudents && cloudStudents.length > 0) {
-    // 1. Populate base map from cloud source of truth
-    cloudStudents.forEach((cloud) => {
-      if (!deletedStudentIds.includes(cloud.id)) {
-        studentMap.set(cloud.id, cloud);
+  // 1. Base map from cloud source of truth
+  (cloudStudents || []).forEach((cloud) => {
+    if (cloud && cloud.id && !deletedStudentIds.includes(cloud.id)) {
+      studentMap.set(cloud.id, cloud);
+    }
+  });
+
+  // 2. Safely merge local storage entries without dropping ANY user-entered student
+  (localStudents || []).forEach((local) => {
+    if (!local || !local.id || deletedStudentIds.includes(local.id)) return;
+
+    const cloud = studentMap.get(local.id);
+    if (cloud) {
+      // If local version has equal or strictly newer modification timestamp, prefer local
+      const localTime = local.lastModified || 0;
+      const cloudTime = cloud.lastModified || 0;
+      if (localTime >= cloudTime) {
+        studentMap.set(local.id, local);
       }
-    });
-
-    // 2. Reconcile with local storage entries
-    const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
-    localStudents.forEach((local) => {
-      if (deletedStudentIds.includes(local.id)) return;
-
-      const cloud = studentMap.get(local.id);
-      if (cloud) {
-        // If local version has a strictly newer modification timestamp, prefer local
-        const localTime = local.lastModified || 0;
-        const cloudTime = cloud.lastModified || 0;
-        if (localTime > cloudTime) {
-          studentMap.set(local.id, local);
-        }
-      } else {
-        // Only retain local-only students if created/modified very recently (e.g. pending offline sync)
-        const localTime = local.lastModified || 0;
-        if (localTime > fiveMinutesAgo) {
-          studentMap.set(local.id, local);
-        }
-      }
-    });
-
-    return Array.from(studentMap.values());
-  }
-
-  // Fallback if cloud dataset is empty: return non-deleted local students
-  localStudents.forEach((local) => {
-    if (!deletedStudentIds.includes(local.id)) {
+    } else {
+      // Local student not yet reflected in cloud: PRESERVE ALWAYS
       studentMap.set(local.id, local);
     }
   });
 
   return Array.from(studentMap.values());
+}
+
+export function reconcileMentorRecords(
+  localMentors: Mentor[],
+  cloudMentors: Mentor[]
+): Mentor[] {
+  let deletedMentorIds: string[] = [];
+  try {
+    deletedMentorIds = JSON.parse(localStorage.getItem('edupulse_deleted_mentors') || '[]');
+  } catch (e) {}
+
+  const mentorMap = new Map<string, Mentor>();
+
+  const getMentorKey = (m: Mentor) => {
+    const normE = (m.email || '').trim().toLowerCase();
+    if (normE) return `email:${normE}`;
+    const normP = (m.phone || '').replace(/\D/g, '').slice(-10);
+    if (normP) return `phone:${normP}`;
+    return `id:${m.id}`;
+  };
+
+  const isGeneric = (name?: string) => {
+    if (!name) return true;
+    const lower = name.toLowerCase();
+    return lower.includes('faculty member') || lower.startsWith('prof. faculty') || lower.startsWith('faculty');
+  };
+
+  (cloudMentors || []).forEach((cloud) => {
+    if (cloud && cloud.id && !deletedMentorIds.includes(cloud.id)) {
+      const key = getMentorKey(cloud);
+      mentorMap.set(key, cloud);
+    }
+  });
+
+  (localMentors || []).forEach((local) => {
+    if (!local || !local.id || deletedMentorIds.includes(local.id)) return;
+    const key = getMentorKey(local);
+    const cloud = mentorMap.get(key);
+
+    if (cloud) {
+      const localTime = local.lastModified || 0;
+      const cloudTime = cloud.lastModified || 0;
+
+      const localGeneric = isGeneric(local.name);
+      const cloudGeneric = isGeneric(cloud.name);
+
+      let bestName = local.name || cloud.name;
+      if (localGeneric && !cloudGeneric) {
+        bestName = cloud.name;
+      } else if (!localGeneric) {
+        bestName = local.name;
+      }
+
+      let bestDept = local.department || cloud.department || 'Physics';
+      if (local.department && local.department !== 'Physics') {
+        bestDept = local.department;
+      } else if (cloud.department && cloud.department !== 'Physics') {
+        bestDept = cloud.department;
+      }
+
+      let bestDesig = local.designation || cloud.designation || 'Assistant Professor';
+      if (local.designation && local.designation !== 'Assistant Professor') {
+        bestDesig = local.designation;
+      } else if (cloud.designation && cloud.designation !== 'Assistant Professor') {
+        bestDesig = cloud.designation;
+      }
+
+      const mergedMentees = Array.from(
+        new Set([...(cloud.assignedMenteeIds || []), ...(local.assignedMenteeIds || [])])
+      );
+
+      const merged: Mentor = {
+        ...cloud,
+        ...local,
+        id: local.id || cloud.id,
+        name: bestName,
+        designation: bestDesig,
+        department: bestDept,
+        email: local.email || cloud.email,
+        phone: local.phone || cloud.phone,
+        assignedMenteeIds: mergedMentees,
+        lastModified: Math.max(localTime, cloudTime, Date.now()),
+      };
+
+      mentorMap.set(key, merged);
+    } else {
+      mentorMap.set(key, local);
+    }
+  });
+
+  return Array.from(mentorMap.values());
 }
 
 // Sync Verification Utility: Checks cloud state vs local storage, re-fetching missing cloud data and prioritizing cloud over stale local storage
@@ -465,22 +541,37 @@ export async function verifyAndSyncCloudData(): Promise<SyncVerificationResult> 
       if (saved) localStudents = JSON.parse(saved);
     } catch (e) {}
 
+    let localMentors: Mentor[] = [];
+    try {
+      const savedM = localStorage.getItem('edupulse_mentors');
+      if (savedM) localMentors = JSON.parse(savedM);
+    } catch (e) {}
+
     const reconciledStudents = reconcileStudentRecords(localStudents, combinedCloudStudents);
+    const reconciledMentors = reconcileMentorRecords(localMentors, combinedCloudMentors);
 
     // Save server source of truth to localStorage
     localStorage.setItem('edupulse_students', JSON.stringify(reconciledStudents));
-    if (combinedCloudMentors.length > 0) {
-      localStorage.setItem('edupulse_mentors', JSON.stringify(combinedCloudMentors));
+    if (reconciledMentors.length > 0) {
+      localStorage.setItem('edupulse_mentors', JSON.stringify(reconciledMentors));
     }
     if (combinedCloudUpdates.length > 0) {
       localStorage.setItem('edupulse_teacher_updates', JSON.stringify(combinedCloudUpdates));
     }
 
+    // If local has students that cloud is missing, automatically back them up to server/cloud
+    const missingInCloudStudents = reconciledStudents.filter(
+      (s) => !combinedCloudStudents.some((c) => c.id === s.id)
+    );
+    if (missingInCloudStudents.length > 0) {
+      saveStudentsBatchToCloud(missingInCloudStudents);
+    }
+
     return {
       students: reconciledStudents,
-      mentors: combinedCloudMentors,
+      mentors: reconciledMentors,
       teacherUpdates: combinedCloudUpdates,
-      syncedFromCloud: reconciledStudents.length > 0 || combinedCloudMentors.length > 0,
+      syncedFromCloud: reconciledStudents.length > 0 || reconciledMentors.length > 0,
     };
   } catch (err) {
     console.warn('Sync Verification Warning:', err);
