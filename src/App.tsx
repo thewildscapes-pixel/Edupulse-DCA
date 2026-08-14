@@ -413,7 +413,7 @@ export default function App() {
 
     const mentorForMatching = existing || {
       id: targetId,
-      name: savedName || userEmail.split('@')[0] || 'Faculty',
+      name: (savedName && !isGenericName(savedName)) ? savedName : (userEmail.split('@')[0] || 'Faculty'),
       email: userEmail.trim(),
       phone: userPhone.trim(),
     };
@@ -427,7 +427,7 @@ export default function App() {
       const mergedMenteeIds = Array.from(new Set([...(existing.assignedMenteeIds || []), ...matchedStudentIds]));
       return {
         ...existing,
-        name: (savedName && !isGenericName(savedName)) ? savedName : existing.name,
+        name: (savedName && !isGenericName(savedName)) ? savedName : (existing.name || 'Faculty Member'),
         department: savedDept || existing.department || 'Physics',
         designation: savedDesig || existing.designation || 'Assistant Professor',
         assignedMenteeIds: mergedMenteeIds,
@@ -443,7 +443,7 @@ export default function App() {
 
     return {
       id: targetId,
-      name: savedName || `${title} ${formattedName}`,
+      name: (savedName && !isGenericName(savedName)) ? savedName : `${title} ${formattedName}`,
       designation: savedDesig || 'Assistant Professor',
       department: savedDept || 'Physics',
       email: userEmail.trim(),
@@ -657,16 +657,16 @@ export default function App() {
       phone: string;
     }
   ) => {
-    const finalEmail = email?.trim() || userEmail || 'prof.deborshee@digboicollege.edu.in';
-    const finalPhone = phone?.trim() || userPhone || '+91 94350 12345';
+    const finalEmail = email?.trim() || userEmail || localStorage.getItem('edupulse_faculty_email') || '';
+    const finalPhone = phone?.trim() || userPhone || localStorage.getItem('edupulse_faculty_phone') || '';
     setCurrentRole(role);
     setActiveTab(defaultTab);
     setUserEmail(finalEmail);
     setUserPhone(finalPhone);
 
     // Save session in localStorage
-    localStorage.setItem('edupulse_faculty_email', finalEmail);
-    localStorage.setItem('edupulse_faculty_phone', finalPhone);
+    if (finalEmail) localStorage.setItem('edupulse_faculty_email', finalEmail);
+    if (finalPhone) localStorage.setItem('edupulse_faculty_phone', finalPhone);
     localStorage.setItem('edupulse_faculty_role', role);
 
     if (mentorProfile) {
@@ -717,23 +717,18 @@ export default function App() {
         const existing = prev[idx];
         const updated = [...prev];
 
-        // CRITICAL: Preserve existing customized profile saved in database!
-        const isDefaultName = !existing.name || existing.name === 'Dr. Faculty Member' || existing.name.startsWith('Prof. Faculty');
-        const isDefaultDesig = !existing.designation;
-        const isDefaultDept = !existing.department;
-
-        const resolvedName = mentorProfile?.name || existing.name || localStorage.getItem('edupulse_faculty_name') || 'Dr. Deborshee Gogoi';
-        const resolvedDesig = mentorProfile?.designation || existing.designation || localStorage.getItem('edupulse_faculty_designation') || 'Assistant Professor';
-        const resolvedDept = (mentorProfile?.department || existing.department || localStorage.getItem('edupulse_faculty_department') || 'Physics') as Department;
+        const resolvedName = mentorProfile?.name || localStorage.getItem('edupulse_faculty_name') || existing.name || (finalEmail ? finalEmail.split('@')[0] : 'Faculty');
+        const resolvedDesig = mentorProfile?.designation || localStorage.getItem('edupulse_faculty_designation') || existing.designation || 'Assistant Professor';
+        const resolvedDept = (mentorProfile?.department || localStorage.getItem('edupulse_faculty_department') || existing.department || 'Physics') as Department;
 
         updated[idx] = {
           ...existing,
           id: targetId,
           email: finalEmail || existing.email,
           phone: finalPhone || existing.phone,
-          name: isDefaultName ? resolvedName : existing.name,
-          designation: isDefaultDesig ? resolvedDesig : existing.designation,
-          department: isDefaultDept ? resolvedDept : existing.department,
+          name: resolvedName,
+          designation: resolvedDesig,
+          department: resolvedDept,
           lastModified: Date.now(),
         };
         updatedMentorToSync = updated[idx];
@@ -746,11 +741,15 @@ export default function App() {
         .filter((s) => isStudentOfMentor(s, { id: targetId, email: finalEmail, phone: finalPhone, name: mentorProfile?.name }, finalEmail, finalPhone, prev))
         .map((s) => s.id);
 
+      const resolvedNewName = mentorProfile?.name || localStorage.getItem('edupulse_faculty_name') || (finalEmail ? finalEmail.split('@')[0] : 'Faculty Member');
+      const resolvedNewDesig = mentorProfile?.designation || localStorage.getItem('edupulse_faculty_designation') || 'Assistant Professor';
+      const resolvedNewDept = (mentorProfile?.department || localStorage.getItem('edupulse_faculty_department') || 'Physics') as Department;
+
       const newMentor: Mentor = {
         id: targetId,
-        name: mentorProfile?.name || localStorage.getItem('edupulse_faculty_name') || `Dr. Deborshee Gogoi`,
-        designation: mentorProfile?.designation || localStorage.getItem('edupulse_faculty_designation') || 'Assistant Professor',
-        department: (mentorProfile?.department || localStorage.getItem('edupulse_faculty_department') || 'Physics') as Department,
+        name: resolvedNewName,
+        designation: resolvedNewDesig,
+        department: resolvedNewDept,
         email: finalEmail,
         phone: mentorProfile?.phone || finalPhone,
         assignedMenteeIds: matchedStudentIds.length > 0 ? matchedStudentIds : students.map((s) => s.id),
@@ -905,8 +904,13 @@ export default function App() {
         onOpenWalkthrough={() => setIsWalkthroughOpen(true)}
         userEmail={userEmail}
         userPhone={userPhone}
+        facultyName={currentMentor.name}
         isAdmin={isAdmin}
         onLogout={handleLogout}
+        onOpenEditProfile={() => {
+          setEditingMentor(currentMentor);
+          setIsEditProfileOpen(true);
+        }}
         onForceRefresh={handleForceRefresh}
         isRefreshing={isForceRefreshing}
       />

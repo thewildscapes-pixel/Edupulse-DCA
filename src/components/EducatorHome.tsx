@@ -215,17 +215,25 @@ export const EducatorHome: React.FC<EducatorHomeProps> = ({
             Digboi College system for continuous student assessment, early academic intervention, and structured parent guidance.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={onOpenEditProfile}
+            className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white font-semibold text-xs rounded-xl border border-white/20 flex items-center space-x-1.5 transition-colors cursor-pointer"
+            title="Edit Faculty Name, Designation & Department"
+          >
+            <Edit3 className="w-3.5 h-3.5" />
+            <span>Edit Profile</span>
+          </button>
           <button
             onClick={onOpenAddMentee}
-            className="px-4 py-2 bg-[#1976d2] hover:bg-blue-600 text-white font-semibold text-xs rounded-xl shadow-xs flex items-center space-x-1.5 transition-colors"
+            className="px-4 py-2 bg-[#1976d2] hover:bg-blue-600 text-white font-semibold text-xs rounded-xl shadow-xs flex items-center space-x-1.5 transition-colors cursor-pointer"
           >
             <UserPlus className="w-4 h-4" />
             <span>Add Student</span>
           </button>
           <button
             onClick={() => onNavigate('assessment')}
-            className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white font-semibold text-xs rounded-xl border border-white/20 flex items-center space-x-1.5 transition-colors"
+            className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white font-semibold text-xs rounded-xl border border-white/20 flex items-center space-x-1.5 transition-colors cursor-pointer"
           >
             <FileSpreadsheet className="w-4 h-4" />
             <span>Mark Entry</span>

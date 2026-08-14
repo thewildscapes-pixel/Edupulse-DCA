@@ -27,8 +27,10 @@ interface HeaderProps {
   onOpenWalkthrough: () => void;
   userEmail: string;
   userPhone: string;
+  facultyName?: string;
   isAdmin?: boolean;
   onLogout: () => void;
+  onOpenEditProfile?: () => void;
   onForceRefresh?: () => Promise<void>;
   isRefreshing?: boolean;
 }
@@ -41,8 +43,10 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenWalkthrough,
   userEmail,
   userPhone,
+  facultyName,
   isAdmin = false,
   onLogout,
+  onOpenEditProfile,
   onForceRefresh,
   isRefreshing = false,
 }) => {
@@ -166,12 +170,28 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Logged in User info & Logout */}
             <div className="flex items-center space-x-2 pl-2 border-l border-slate-200">
-              <div className="text-right hidden sm:block">
-                <p className="text-xs font-bold text-slate-800 truncate max-w-[140px]">
-                  {userEmail || 'Faculty Member'}
+              <div 
+                onClick={onOpenEditProfile}
+                className={`text-right hidden sm:block ${onOpenEditProfile ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+                title={onOpenEditProfile ? 'Click to Edit Faculty Profile' : undefined}
+              >
+                <p className="text-xs font-bold text-slate-800 truncate max-w-[150px]">
+                  {facultyName || userEmail || 'Faculty Member'}
                 </p>
-                <p className="text-[10px] text-slate-500 capitalize">{currentRole} Portal</p>
+                <p className="text-[10px] text-slate-500 capitalize flex items-center justify-end space-x-1">
+                  <span>{currentRole} Portal</span>
+                  {onOpenEditProfile && <span className="text-[#1976d2] font-semibold underline text-[9px]">Edit</span>}
+                </p>
               </div>
+              {onOpenEditProfile && (
+                <button
+                  onClick={onOpenEditProfile}
+                  className="p-1.5 text-slate-500 hover:text-[#1976d2] hover:bg-blue-50 rounded-lg transition-colors"
+                  title="Edit Faculty Profile Details"
+                >
+                  <User className="w-4 h-4" />
+                </button>
+              )}
               <button
                 onClick={onLogout}
                 className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"

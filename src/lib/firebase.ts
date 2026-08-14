@@ -403,23 +403,16 @@ export function reconcileMentorRecords(
       let bestName = local.name || cloud.name;
       if (localGeneric && !cloudGeneric) {
         bestName = cloud.name;
-      } else if (!localGeneric) {
+      } else if (!localGeneric && cloudGeneric) {
         bestName = local.name;
+      } else if (localTime > cloudTime) {
+        bestName = local.name || cloud.name;
+      } else {
+        bestName = cloud.name || local.name;
       }
 
-      let bestDept = local.department || cloud.department || 'Physics';
-      if (local.department && local.department !== 'Physics') {
-        bestDept = local.department;
-      } else if (cloud.department && cloud.department !== 'Physics') {
-        bestDept = cloud.department;
-      }
-
-      let bestDesig = local.designation || cloud.designation || 'Assistant Professor';
-      if (local.designation && local.designation !== 'Assistant Professor') {
-        bestDesig = local.designation;
-      } else if (cloud.designation && cloud.designation !== 'Assistant Professor') {
-        bestDesig = cloud.designation;
-      }
+      let bestDept = localTime >= cloudTime ? (local.department || cloud.department || 'Physics') : (cloud.department || local.department || 'Physics');
+      let bestDesig = localTime >= cloudTime ? (local.designation || cloud.designation || 'Assistant Professor') : (cloud.designation || local.designation || 'Assistant Professor');
 
       const mergedMentees = Array.from(
         new Set([...(cloud.assignedMenteeIds || []), ...(local.assignedMenteeIds || [])])

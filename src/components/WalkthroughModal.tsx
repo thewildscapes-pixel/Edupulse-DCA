@@ -672,27 +672,28 @@ const FacultyRoleLoginStep: React.FC<FacultyRoleLoginStepProps> = ({
 
   // Mentor profile fields initialized from matched mentor if present or localStorage
   const [mentorName, setMentorName] = useState(() => {
+    const savedName = localStorage.getItem('edupulse_faculty_name');
+    if (savedName && !savedName.includes('Faculty Member') && !savedName.startsWith('Prof. Faculty')) return savedName;
     if (matchedMentor?.name && !matchedMentor.name.includes('Faculty Member') && !matchedMentor.name.startsWith('Prof. Faculty')) {
       return matchedMentor.name;
     }
-    const savedName = localStorage.getItem('edupulse_faculty_name');
-    if (savedName) return savedName;
-    const namePart = (initialEmail || 'faculty').split('@')[0];
+    const namePart = (initialEmail || email || '').split('@')[0] || '';
+    if (!namePart) return '';
     const formatted = namePart.replace(/[._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
     const isDr = namePart.toLowerCase().includes('dr');
     return isDr ? `Dr. ${formatted}` : `Prof. ${formatted}`;
   });
   const [mentorDesignation, setMentorDesignation] = useState(() => {
     return (
-      matchedMentor?.designation ||
       localStorage.getItem('edupulse_faculty_designation') ||
+      matchedMentor?.designation ||
       'Assistant Professor'
     );
   });
   const [mentorDept, setMentorDept] = useState<Department>(() => {
     return (
-      matchedMentor?.department ||
       (localStorage.getItem('edupulse_faculty_department') as Department) ||
+      matchedMentor?.department ||
       'Physics'
     );
   });
@@ -706,29 +707,17 @@ const FacultyRoleLoginStep: React.FC<FacultyRoleLoginStepProps> = ({
     }
   }, [initialEmail, initialPhone]);
 
-  // Keep form fields synced if matched mentor profile is loaded from Firestore / local storage
-  React.useEffect(() => {
-    if (matchedMentor && matchedMentor.name && !matchedMentor.name.includes('Faculty Member') && !matchedMentor.name.startsWith('Prof. Faculty')) {
-      setMentorName(matchedMentor.name);
-      if (matchedMentor.designation) {
-        setMentorDesignation(matchedMentor.designation);
-      }
-      if (matchedMentor.department) {
-        setMentorDept(matchedMentor.department);
-      }
-    }
-  }, [matchedMentor]);
-
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
 
   const handleEnterPortal = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    const finalEmail = email.trim() || 'prof.deborshee@digboicollege.edu.in';
-    const finalPhone = phone.trim() || '+91 94350 12345';
+    const finalEmail = email.trim() || initialEmail?.trim() || '';
+    const finalPhone = phone.trim() || initialPhone?.trim() || '';
+    const resolvedName = mentorName.trim() || (finalEmail ? (finalEmail.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())) : 'Faculty Member');
     const profile = {
-      name: mentorName.trim() || 'Dr. Deborshee Gogoi',
-      designation: mentorDesignation,
-      department: mentorDept,
+      name: resolvedName,
+      designation: mentorDesignation || 'Assistant Professor',
+      department: mentorDept || 'Physics',
       phone: finalPhone,
     };
 
