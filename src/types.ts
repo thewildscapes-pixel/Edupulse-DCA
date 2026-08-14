@@ -196,3 +196,43 @@ export interface ResourceItem {
   fileSize?: string;
 }
 
+export type MentoringSessionType =
+  | 'One-on-One Counseling'
+  | 'Group Mentoring'
+  | 'Academic Performance Review'
+  | 'Attendance Shortage Intervention'
+  | 'Remedial Action Session'
+  | 'Slow Learner Tutorial Review'
+  | 'FYUGP Major/Minor Course Guidance'
+  | 'Career & Higher Studies Guidance'
+  | 'Personal & Psycho-Social Support'
+  | 'Parent-Teacher Consultation'
+  | 'General Progress Tracking';
+
+export type MenteeLogStatus =
+  | 'Action Required'
+  | 'In Progress'
+  | 'Satisfactory'
+  | 'Resolved'
+  | 'Follow-up Needed';
+
+export interface MenteeLog {
+  id: string;
+  date: string;
+  sessionTime?: string;
+  mentorId: string;
+  mentorName: string;
+  mentorEmail?: string;
+  mentorDepartment?: string;
+  sessionType: MentoringSessionType;
+  topic: string;
+  studentIds: string[]; // List of mentee IDs covered in this log
+  observations: string; // Mentor findings and diagnostic observations
+  actionPlan: string; // Remedial action plan / assignments / commitments
+  outcomeStatus: MenteeLogStatus;
+  followUpDate?: string;
+  parentNotified?: boolean;
+  tags?: string[];
+  lastModified?: number;
+}
+

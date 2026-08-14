@@ -76,6 +76,7 @@ async function startServer() {
   let cloudDbBlockedLogins: string[] = initialStore?.blockedLogins || [];
   let cloudDbResources: any[] = initialStore?.resources || [];
   let cloudDbQuizzes: any[] = initialStore?.quizzes || [];
+  let cloudDbMenteeLogs: any[] = initialStore?.menteeLogs || [];
 
   const persistDataStore = () => {
     saveDataStore({
@@ -86,6 +87,7 @@ async function startServer() {
       blockedLogins: cloudDbBlockedLogins,
       resources: cloudDbResources,
       quizzes: cloudDbQuizzes,
+      menteeLogs: cloudDbMenteeLogs,
     });
   };
 
@@ -98,12 +100,13 @@ async function startServer() {
       blockedLogins: cloudDbBlockedLogins,
       resources: cloudDbResources,
       quizzes: cloudDbQuizzes,
+      menteeLogs: cloudDbMenteeLogs,
       timestamp: Date.now(),
     });
   });
 
   app.post('/api/sync-data', (req, res) => {
-    const { students, mentors, teacherUpdates, adminList, blockedLogins, resources, quizzes } = req.body;
+    const { students, mentors, teacherUpdates, adminList, blockedLogins, resources, quizzes, menteeLogs } = req.body;
 
     if (Array.isArray(students)) {
       const studentMap = new Map();
@@ -209,6 +212,13 @@ async function startServer() {
       cloudDbQuizzes = Array.from(quizMap.values());
     }
 
+    if (Array.isArray(menteeLogs)) {
+      const logMap = new Map();
+      cloudDbMenteeLogs.forEach((l) => logMap.set(l.id, l));
+      menteeLogs.forEach((l) => logMap.set(l.id, l));
+      cloudDbMenteeLogs = Array.from(logMap.values());
+    }
+
     persistDataStore();
 
     res.json({
@@ -220,8 +230,47 @@ async function startServer() {
       blockedLogins: cloudDbBlockedLogins,
       resources: cloudDbResources,
       quizzes: cloudDbQuizzes,
+      menteeLogs: cloudDbMenteeLogs,
       timestamp: Date.now(),
     });
+  });
+
+  // Mentee Session Logs Endpoints
+  app.get('/api/mentee-logs', (_req, res) => {
+    res.json({ menteeLogs: cloudDbMenteeLogs });
+  });
+
+  app.post('/api/mentee-logs', (req, res) => {
+    const payload = req.body;
+    if (!payload) {
+      return res.status(400).json({ error: 'Payload is required' });
+    }
+
+    if (Array.isArray(payload)) {
+      // Bulk creation/update of mentee logs
+      const logMap = new Map();
+      cloudDbMenteeLogs.forEach((l) => logMap.set(l.id, l));
+      payload.forEach((l) => {
+        if (l && l.id) logMap.set(l.id, l);
+      });
+      cloudDbMenteeLogs = Array.from(logMap.values());
+    } else if (payload.id) {
+      const index = cloudDbMenteeLogs.findIndex((l) => l.id === payload.id);
+      if (index >= 0) {
+        cloudDbMenteeLogs[index] = payload;
+      } else {
+        cloudDbMenteeLogs.unshift(payload);
+      }
+    }
+    persistDataStore();
+    res.json({ success: true, menteeLogs: cloudDbMenteeLogs });
+  });
+
+  app.delete('/api/mentee-logs/:id', (req, res) => {
+    const { id } = req.params;
+    cloudDbMenteeLogs = cloudDbMenteeLogs.filter((l) => l.id !== id);
+    persistDataStore();
+    res.json({ success: true, menteeLogs: cloudDbMenteeLogs });
   });
 
   // Resources Endpoints
@@ -733,6 +782,64 @@ Formatting rules:
       const { studentName, rollNo, department, attendance, sessionalAvg, customNote, mentorName } = req.body;
       return res.json({
         message: `*OFFICIAL NOTICE — DIGBOI COLLEGE (AUTONOMOUS)*\n\nRespected Guardian,\n\nThis is regarding your ward *${studentName}* (Roll: ${rollNo}, Dept of ${department}).\n• Attendance: *${attendance}%*\n• Sessional Average: *${sessionalAvg}/30*\n• Note: ${customNote || 'Regular mentorship update'}\n\nPlease contact Faculty Mentor *${mentorName || 'Digboi College Faculty'}* for details.`
+      });
+    }
+  });
+
+  // 5. AI Bulk Mentee Log Notes & Action Plan Assistant
+  app.post('/api/generate-mentee-log-notes', async (req, res) => {
+    try {
+      const { sessionType, topic, studentCount, keyPoints, department, mentorName } = req.body;
+      const ai = getGenAIClient();
+
+      if (!ai) {
+        return res.json({
+          observations: `Conducted ${sessionType || 'Mentorship Session'} with ${studentCount || 'assigned'} mentees in ${department || 'General'} department focusing on ${topic || 'academic progress'}. Key concerns regarding continuous assessment, attendance regularity, and classroom participation were reviewed.`,
+          actionPlan: `1. Students instructed to attend scheduled tutorial/remedial classes regularly.\n2. Submit assigned concept worksheets before the upcoming deadline.\n3. Track individual attendance to ensure compliance with the 75% Dibrugarh University / Digboi College mandate.\n4. Follow-up review scheduled in 2 weeks.`,
+          recommendedTags: ['Mentorship', 'Remedial Action', 'Attendance Review', 'NEP 2020'],
+        });
+      }
+
+      const prompt = `
+You are a senior Faculty Mentor and Academic Advisor at Digboi College (Autonomous), Assam, India.
+Generate professional, NAAC-compliant, and structured Mentoring Session Log Observations and a Concrete Action Plan for a session conducted with ${studentCount || 'a cohort of'} mentees.
+
+Session Specifications:
+- Department: ${department || 'General'}
+- Faculty Mentor: ${mentorName || 'Faculty Mentor'}
+- Mentoring Session Type: ${sessionType || 'Academic Review & Counseling'}
+- Agenda / Topic: ${topic || 'Continuous Assessment & Attendance Improvement'}
+- Key Faculty Notes / Inputs: ${keyPoints || 'Review of sessional performance, attendance compliance, and learning bottlenecks.'}
+
+Return ONLY a valid JSON object with the following schema:
+{
+  "observations": "Clear, professional 2-3 paragraph diagnostic summary of student issues, engagement level, and academic bottlenecks observed during the session.",
+  "actionPlan": "Numbered list of concrete, actionable steps, student commitments, remedial milestones, and faculty interventions.",
+  "recommendedTags": ["Tag1", "Tag2", "Tag3"]
+}
+`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.6-flash',
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+          temperature: 0.3,
+        }
+      });
+
+      const parsed = JSON.parse(response.text || '{}');
+      return res.json({
+        observations: parsed.observations || 'Session conducted successfully with mentees.',
+        actionPlan: parsed.actionPlan || '1. Attend classes regularly.\n2. Submit remedial tasks on time.',
+        recommendedTags: Array.isArray(parsed.recommendedTags) ? parsed.recommendedTags : ['Mentorship', 'NEP 2020'],
+      });
+    } catch (error: any) {
+      console.error('Error in /api/generate-mentee-log-notes:', error);
+      return res.json({
+        observations: 'Conducted mentoring session with mentees. Discussed academic progress, sessional marks, and attendance maintenance.',
+        actionPlan: '1. Maintain minimum 75% attendance.\n2. Prepare diligently for next sessional assessment.\n3. Consult subject teachers for difficult topics.',
+        recommendedTags: ['Mentorship', 'Academic Guidance'],
       });
     }
   });

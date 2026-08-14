@@ -9,7 +9,7 @@ import {
   getDocs,
   writeBatch,
 } from 'firebase/firestore';
-import { Student, Mentor, TeacherUpdateLog, FacultyLoginRecord } from '../types';
+import { Student, Mentor, TeacherUpdateLog, FacultyLoginRecord, MenteeLog } from '../types';
 
 // Firebase configuration from environment or fallback
 const metaEnv = (import.meta as any).env || {};
@@ -32,6 +32,7 @@ const MENTORS_COL = 'mentors';
 const TEACHER_UPDATES_COL = 'teacher_updates';
 const LOGIN_REGISTRY_COL = 'login_registry';
 const SETTINGS_COL = 'settings';
+const MENTEE_LOGS_COL = 'mentee_logs';
 
 // Real-time Subscriptions
 export function subscribeStudents(
@@ -140,6 +141,27 @@ export function subscribeAdminList(onUpdate: (adminList: string[]) => void) {
   }
 }
 
+export function subscribeMenteeLogs(
+  onUpdate: (logs: MenteeLog[]) => void,
+  onError?: (err: any) => void
+) {
+  try {
+    return onSnapshot(
+      collection(db, MENTEE_LOGS_COL),
+      (snapshot) => {
+        const logsList: MenteeLog[] = snapshot.docs.map((d) => d.data() as MenteeLog);
+        onUpdate(logsList);
+      },
+      (error) => {
+        console.warn('Firestore mentee logs subscription error:', error);
+        if (onError) onError(error);
+      }
+    );
+  } catch (e) {
+    return () => {};
+  }
+}
+
 export async function saveAdminListToCloud(adminList: string[]): Promise<void> {
   try {
     await setDoc(doc(db, SETTINGS_COL, 'admin_list'), { list: adminList });
@@ -155,6 +177,7 @@ export async function syncServerData(payload?: {
   teacherUpdates?: TeacherUpdateLog[];
   adminList?: string[];
   blockedLogins?: string[];
+  menteeLogs?: MenteeLog[];
 }) {
   try {
     if (payload) {
@@ -276,6 +299,42 @@ export async function saveBlockedLoginsToCloud(blockedList: string[]): Promise<v
     await setDoc(doc(db, SETTINGS_COL, 'blocked_logins'), { list: blockedList });
   } catch (err) {
     console.error('Error saving blocked logins:', err);
+  }
+}
+
+export async function saveMenteeLogToCloud(log: MenteeLog): Promise<void> {
+  try {
+    const logWithTs = {
+      ...log,
+      lastModified: log.lastModified || Date.now(),
+    };
+    await syncServerData({ menteeLogs: [logWithTs] });
+    await setDoc(doc(db, MENTEE_LOGS_COL, logWithTs.id), logWithTs, { merge: true });
+  } catch (err) {
+    console.error('Error saving mentee log to cloud:', err);
+  }
+}
+
+export async function saveMenteeLogsBatchToCloud(logs: MenteeLog[]): Promise<void> {
+  try {
+    const logsWithTs = logs.map(l => ({ ...l, lastModified: l.lastModified || Date.now() }));
+    await syncServerData({ menteeLogs: logsWithTs });
+    const batch = writeBatch(db);
+    logsWithTs.forEach((l) => {
+      batch.set(doc(db, MENTEE_LOGS_COL, l.id), l, { merge: true });
+    });
+    await batch.commit();
+  } catch (err) {
+    console.error('Error saving mentee logs batch to cloud:', err);
+  }
+}
+
+export async function deleteMenteeLogFromCloud(logId: string): Promise<void> {
+  try {
+    await fetch(`/api/mentee-logs/${logId}`, { method: 'DELETE' });
+    await deleteDoc(doc(db, MENTEE_LOGS_COL, logId));
+  } catch (err) {
+    console.error('Error deleting mentee log from cloud:', err);
   }
 }
 
@@ -445,6 +504,7 @@ export interface SyncVerificationResult {
   students: Student[];
   mentors: Mentor[];
   teacherUpdates: TeacherUpdateLog[];
+  menteeLogs?: MenteeLog[];
   syncedFromCloud: boolean;
 }
 
@@ -455,19 +515,23 @@ export async function verifyAndSyncCloudData(): Promise<SyncVerificationResult> 
     const serverStudents: Student[] = serverSync?.students || [];
     const serverMentors: Mentor[] = serverSync?.mentors || [];
     const serverUpdates: TeacherUpdateLog[] = serverSync?.teacherUpdates || [];
+    const serverMenteeLogs: MenteeLog[] = serverSync?.menteeLogs || [];
 
     // 2. Fetch Firestore data (if available)
     let cloudStudents: Student[] = [];
     let cloudMentors: Mentor[] = [];
     let cloudUpdates: TeacherUpdateLog[] = [];
+    let cloudMenteeLogs: MenteeLog[] = [];
     try {
       const studentsSnap = await getDocs(collection(db, STUDENTS_COL));
       const mentorsSnap = await getDocs(collection(db, MENTORS_COL));
       const updatesSnap = await getDocs(collection(db, TEACHER_UPDATES_COL));
+      const menteeLogsSnap = await getDocs(collection(db, MENTEE_LOGS_COL));
 
       cloudStudents = studentsSnap.docs.map((d) => d.data() as Student);
       cloudMentors = mentorsSnap.docs.map((d) => d.data() as Mentor);
       cloudUpdates = updatesSnap.docs.map((d) => d.data() as TeacherUpdateLog);
+      cloudMenteeLogs = menteeLogsSnap.docs.map((d) => d.data() as MenteeLog);
     } catch (e) {
       console.warn('Firestore fetch fallback to server API:', e);
     }
@@ -528,6 +592,11 @@ export async function verifyAndSyncCloudData(): Promise<SyncVerificationResult> 
     cloudUpdates.forEach((u) => combinedUpdatesMap.set(u.id, u));
     const combinedCloudUpdates = Array.from(combinedUpdatesMap.values());
 
+    const combinedLogsMap = new Map<string, MenteeLog>();
+    serverMenteeLogs.forEach((l) => combinedLogsMap.set(l.id, l));
+    cloudMenteeLogs.forEach((l) => combinedLogsMap.set(l.id, l));
+    const combinedCloudMenteeLogs = Array.from(combinedLogsMap.values());
+
     let localStudents: Student[] = [];
     try {
       const saved = localStorage.getItem('edupulse_students');
@@ -540,8 +609,22 @@ export async function verifyAndSyncCloudData(): Promise<SyncVerificationResult> 
       if (savedM) localMentors = JSON.parse(savedM);
     } catch (e) {}
 
+    let localMenteeLogs: MenteeLog[] = [];
+    try {
+      const savedLogs = localStorage.getItem('edupulse_mentee_logs');
+      if (savedLogs) localMenteeLogs = JSON.parse(savedLogs);
+    } catch (e) {}
+
     const reconciledStudents = reconcileStudentRecords(localStudents, combinedCloudStudents);
     const reconciledMentors = reconcileMentorRecords(localMentors, combinedCloudMentors);
+
+    // Merge local & cloud mentee logs
+    localMenteeLogs.forEach((l) => {
+      if (l && l.id && !combinedLogsMap.has(l.id)) {
+        combinedLogsMap.set(l.id, l);
+      }
+    });
+    const reconciledMenteeLogs = Array.from(combinedLogsMap.values()).sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0));
 
     // Save server source of truth to localStorage
     localStorage.setItem('edupulse_students', JSON.stringify(reconciledStudents));
@@ -550,6 +633,9 @@ export async function verifyAndSyncCloudData(): Promise<SyncVerificationResult> 
     }
     if (combinedCloudUpdates.length > 0) {
       localStorage.setItem('edupulse_teacher_updates', JSON.stringify(combinedCloudUpdates));
+    }
+    if (reconciledMenteeLogs.length > 0) {
+      localStorage.setItem('edupulse_mentee_logs', JSON.stringify(reconciledMenteeLogs));
     }
 
     // If local has students that cloud is missing, automatically back them up to server/cloud
@@ -564,6 +650,7 @@ export async function verifyAndSyncCloudData(): Promise<SyncVerificationResult> 
       students: reconciledStudents,
       mentors: reconciledMentors,
       teacherUpdates: combinedCloudUpdates,
+      menteeLogs: reconciledMenteeLogs,
       syncedFromCloud: reconciledStudents.length > 0 || reconciledMentors.length > 0,
     };
   } catch (err) {
@@ -572,6 +659,7 @@ export async function verifyAndSyncCloudData(): Promise<SyncVerificationResult> 
       students: [],
       mentors: [],
       teacherUpdates: [],
+      menteeLogs: [],
       syncedFromCloud: false,
     };
   }

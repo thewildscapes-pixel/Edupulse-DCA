@@ -23,21 +23,26 @@ import {
   Award,
   Sparkles,
   Trash2,
-  CheckCircle
+  CheckCircle,
+  ClipboardList
 } from 'lucide-react';
-import { Student, Mentor, TeacherUpdateLog, Role, CourseCategory, SubjectMarks } from '../types';
+import { Student, Mentor, TeacherUpdateLog, Role, CourseCategory, SubjectMarks, MenteeLog } from '../types';
 import { isStudentOfMentor } from '../utils/ownership';
+import { BulkMenteeLogProvision } from './BulkMenteeLogProvision';
 
 interface MentorCommandCenterProps {
   students: Student[];
   currentMentor: Mentor;
   mentors: Mentor[];
   teacherUpdates: TeacherUpdateLog[];
+  menteeLogs?: MenteeLog[];
   userEmail: string;
   currentRole: Role;
   onMarkUpdateRead: (updateId: string) => void;
   onUpdateNotes?: (studentId: string, notes: string) => void;
   onBulkUpdateMarks?: (updatedStudents: Student[]) => void;
+  onSaveMenteeLogs?: (logs: MenteeLog | MenteeLog[]) => void;
+  onDeleteMenteeLog?: (logId: string) => void;
   onNavigate: (tab: string, studentId?: string) => void;
   onOpenAddMentee: () => void;
   onOpenEditProfile: () => void;
@@ -87,18 +92,22 @@ export const MentorCommandCenter: React.FC<MentorCommandCenterProps> = ({
   currentMentor,
   mentors,
   teacherUpdates,
+  menteeLogs = [],
   userEmail,
   currentRole,
   onMarkUpdateRead,
   onUpdateNotes,
   onBulkUpdateMarks,
+  onSaveMenteeLogs,
+  onDeleteMenteeLog,
   onNavigate,
   onOpenAddMentee,
   onOpenEditProfile,
   onEditStudent,
   onDeleteStudent,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'mentees' | 'semester-marks' | 'bulk-marks' | 'updates'>('mentees');
+  const [activeSubTab, setActiveSubTab] = useState<'mentees' | 'semester-marks' | 'bulk-marks' | 'mentee-logs' | 'updates'>('mentees');
+  const [menteeForLogId, setMenteeForLogId] = useState<string | undefined>(undefined);
 
   // Filter mentees strictly assigned to current mentor across devices
   const mentees = students.filter((s) =>
@@ -327,7 +336,14 @@ export const MentorCommandCenter: React.FC<MentorCommandCenterProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center space-x-2 w-full md:w-auto justify-end">
+        <div className="flex items-center space-x-2 w-full md:w-auto justify-end flex-wrap gap-y-2">
+          <button
+            onClick={() => setActiveSubTab('mentee-logs')}
+            className="px-3.5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center space-x-1.5 cursor-pointer"
+          >
+            <ClipboardList className="w-3.5 h-3.5" />
+            <span>Bulk Mentee Log</span>
+          </button>
           <button
             onClick={onOpenEditProfile}
             className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition-colors flex items-center space-x-1 cursor-pointer"
@@ -357,6 +373,25 @@ export const MentorCommandCenter: React.FC<MentorCommandCenterProps> = ({
         >
           <Users className="w-4 h-4" />
           <span>Assigned Mentees ({displayMentees.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('mentee-logs')}
+          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+            activeSubTab === 'mentee-logs'
+              ? 'bg-[#1976d2] text-white shadow-xs'
+              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+          }`}
+        >
+          <ClipboardList className="w-4 h-4" />
+          <span>Bulk Mentee Session Logs</span>
+          {menteeLogs.length > 0 && (
+            <span className={`text-[10px] font-extrabold px-1.5 py-0.2 rounded-full ${
+              activeSubTab === 'mentee-logs' ? 'bg-blue-800 text-white' : 'bg-blue-100 text-[#1976d2]'
+            }`}>
+              {menteeLogs.length}
+            </span>
+          )}
         </button>
 
         <button
@@ -472,16 +507,28 @@ export const MentorCommandCenter: React.FC<MentorCommandCenterProps> = ({
                     </div>
 
                     <div className="pt-3 border-t border-slate-100 space-y-2">
-                      <button
-                        onClick={() => {
-                          setSelectedMenteeId(student.id);
-                          setActiveSubTab('semester-marks');
-                        }}
-                        className="w-full py-1.5 px-3 bg-blue-50 hover:bg-blue-100 text-[#1976d2] font-extrabold text-xs rounded-xl flex items-center justify-center space-x-1.5 transition-colors cursor-pointer"
-                      >
-                        <Layers className="w-3.5 h-3.5" />
-                        <span>Enter / Track Semester Marks</span>
-                      </button>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => {
+                            setSelectedMenteeId(student.id);
+                            setActiveSubTab('semester-marks');
+                          }}
+                          className="py-1.5 px-2 bg-blue-50 hover:bg-blue-100 text-[#1976d2] font-extrabold text-[11px] rounded-xl flex items-center justify-center space-x-1 transition-colors cursor-pointer"
+                        >
+                          <Layers className="w-3.5 h-3.5" />
+                          <span>Marks</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setMenteeForLogId(student.id);
+                            setActiveSubTab('mentee-logs');
+                          }}
+                          className="py-1.5 px-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-[11px] rounded-xl flex items-center justify-center space-x-1 transition-colors cursor-pointer"
+                        >
+                          <ClipboardList className="w-3.5 h-3.5" />
+                          <span>Log Session</span>
+                        </button>
+                      </div>
 
                       <div className="flex items-center justify-between gap-1">
                         <button
@@ -489,7 +536,7 @@ export const MentorCommandCenter: React.FC<MentorCommandCenterProps> = ({
                           className="inline-flex items-center space-x-1 px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-[11px] font-bold cursor-pointer transition-colors"
                         >
                           <UserCheck className="w-3.5 h-3.5 text-[#1976d2]" />
-                          <span>👤 View/Edit Profile</span>
+                          <span>👤 View Profile</span>
                         </button>
 
                         <button
@@ -524,6 +571,29 @@ export const MentorCommandCenter: React.FC<MentorCommandCenterProps> = ({
             </div>
           )}
         </>
+      )}
+
+      {/* SUB-TAB: BULK MENTEE SESSION LOG PROVISION */}
+      {activeSubTab === 'mentee-logs' && (
+        <BulkMenteeLogProvision
+          students={students}
+          currentMentor={currentMentor}
+          menteeLogs={menteeLogs}
+          onSaveLogs={(logs) => {
+            if (onSaveMenteeLogs) {
+              onSaveMenteeLogs(logs);
+            }
+          }}
+          onDeleteLog={(logId) => {
+            if (onDeleteMenteeLog) {
+              onDeleteMenteeLog(logId);
+            }
+          }}
+          onNavigateToWhatsApp={(studentId, customMsg) => {
+            onNavigate('whatsapp', studentId);
+          }}
+          initialSelectedStudentId={menteeForLogId}
+        />
       )}
 
       {/* SUB-TAB 2: MENTEE SEMESTER MARKS TRACKER */}

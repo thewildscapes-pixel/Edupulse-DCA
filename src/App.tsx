@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { GraduationCap, Loader2, CheckCircle } from 'lucide-react';
-import { Role, Student, Mentor, TeacherUpdateLog, Department } from './types';
+import { Role, Student, Mentor, TeacherUpdateLog, Department, MenteeLog } from './types';
 import { INITIAL_STUDENTS, INITIAL_MENTORS } from './data/mockData';
 
 const INITIAL_TEACHER_UPDATES: TeacherUpdateLog[] = [];
@@ -25,6 +25,7 @@ import {
   subscribeStudents,
   subscribeMentors,
   subscribeTeacherUpdates,
+  subscribeMenteeLogs,
   subscribeBlockedLogins,
   subscribeLoginRegistry,
   subscribeAdminList,
@@ -37,6 +38,9 @@ import {
   deleteMentorFromCloud,
   saveTeacherUpdateToCloud,
   markTeacherUpdateReadInCloud,
+  saveMenteeLogToCloud,
+  saveMenteeLogsBatchToCloud,
+  deleteMenteeLogFromCloud,
   seedInitialCloudDataIfEmpty,
   verifyAndSyncCloudData,
   reconcileStudentRecords,
@@ -152,6 +156,7 @@ export default function App() {
       localStorage.removeItem('edupulse_students');
       localStorage.removeItem('edupulse_mentors');
       localStorage.removeItem('edupulse_teacher_updates');
+      localStorage.removeItem('edupulse_mentee_logs');
       localStorage.removeItem('edupulse_deleted_students');
       localStorage.removeItem('edupulse_deleted_mentors');
 
@@ -162,16 +167,19 @@ export default function App() {
       const freshStudents = syncResult.students || [];
       const freshMentors = syncResult.mentors || [];
       const freshUpdates = syncResult.teacherUpdates || [];
+      const freshLogs = syncResult.menteeLogs || [];
 
       setStudents(freshStudents);
       setMentors(freshMentors);
       setTeacherUpdates(freshUpdates);
+      setMenteeLogs(freshLogs);
 
       localStorage.setItem('edupulse_students', JSON.stringify(freshStudents));
       localStorage.setItem('edupulse_mentors', JSON.stringify(freshMentors));
       localStorage.setItem('edupulse_teacher_updates', JSON.stringify(freshUpdates));
+      localStorage.setItem('edupulse_mentee_logs', JSON.stringify(freshLogs));
 
-      setRefreshToastMessage(`Local cache purged & re-synced! ${freshStudents.length} student records loaded from Firestore.`);
+      setRefreshToastMessage(`Local cache purged & re-synced! ${freshStudents.length} student records & ${freshLogs.length} mentee logs loaded from Firestore.`);
       setTimeout(() => {
         setRefreshToastMessage(null);
       }, 4500);
@@ -221,6 +229,14 @@ export default function App() {
     return INITIAL_TEACHER_UPDATES;
   });
 
+  const [menteeLogs, setMenteeLogs] = useState<MenteeLog[]>(() => {
+    try {
+      const saved = localStorage.getItem('edupulse_mentee_logs');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return [];
+  });
+
   // Initialize Firestore seeding & real-time listeners for cross-device persistence with strict re-hydration gate
   useEffect(() => {
     let isMounted = true;
@@ -237,13 +253,16 @@ export default function App() {
           const finalStudents = syncResult.students || [];
           const finalMentors = syncResult.mentors || [];
           const finalUpdates = syncResult.teacherUpdates || [];
+          const finalLogs = syncResult.menteeLogs || [];
 
           setStudents(finalStudents);
           setMentors(finalMentors);
           setTeacherUpdates(finalUpdates);
+          setMenteeLogs(finalLogs);
           localStorage.setItem('edupulse_students', JSON.stringify(finalStudents));
           localStorage.setItem('edupulse_mentors', JSON.stringify(finalMentors));
           localStorage.setItem('edupulse_teacher_updates', JSON.stringify(finalUpdates));
+          localStorage.setItem('edupulse_mentee_logs', JSON.stringify(finalLogs));
         }
       } catch (err) {
         console.warn('Initialization sync warning:', err);
@@ -303,6 +322,13 @@ export default function App() {
       }
     });
 
+    const unsubLogs = subscribeMenteeLogs((cloudLogs) => {
+      if (cloudLogs) {
+        setMenteeLogs(cloudLogs);
+        localStorage.setItem('edupulse_mentee_logs', JSON.stringify(cloudLogs));
+      }
+    });
+
     const unsubBlocked = subscribeBlockedLogins((cloudBlocked) => {
       localStorage.setItem('edupulse_blocked_logins', JSON.stringify(cloudBlocked));
     });
@@ -336,6 +362,10 @@ export default function App() {
           setTeacherUpdates(syncResult.teacherUpdates);
           localStorage.setItem('edupulse_teacher_updates', JSON.stringify(syncResult.teacherUpdates));
         }
+        if (syncResult.menteeLogs && syncResult.menteeLogs.length > 0) {
+          setMenteeLogs(syncResult.menteeLogs);
+          localStorage.setItem('edupulse_mentee_logs', JSON.stringify(syncResult.menteeLogs));
+        }
       } catch (e) {}
     };
 
@@ -358,6 +388,7 @@ export default function App() {
       unsubStudents();
       unsubMentors();
       unsubUpdates();
+      unsubLogs();
       unsubBlocked();
       unsubRegistry();
       unsubAdminList();
@@ -837,6 +868,37 @@ export default function App() {
     saveStudentsBatchToCloud(updatedWithTs);
   };
 
+  const handleSaveMenteeLogs = (logs: MenteeLog | MenteeLog[]) => {
+    const logsArray = Array.isArray(logs) ? logs : [logs];
+    const now = Date.now();
+    const logsWithTs = logsArray.map((l) => ({
+      ...l,
+      lastModified: l.lastModified || now,
+    }));
+
+    setMenteeLogs((prev) => {
+      const logMap = new Map<string, MenteeLog>();
+      prev.forEach((l) => logMap.set(l.id, l));
+      logsWithTs.forEach((l) => logMap.set(l.id, l));
+      const mergedList = Array.from(logMap.values()).sort(
+        (a, b) => (b.lastModified || 0) - (a.lastModified || 0)
+      );
+      localStorage.setItem('edupulse_mentee_logs', JSON.stringify(mergedList));
+      return mergedList;
+    });
+
+    saveMenteeLogsBatchToCloud(logsWithTs);
+  };
+
+  const handleDeleteMenteeLog = (logId: string) => {
+    setMenteeLogs((prev) => {
+      const filtered = prev.filter((l) => l.id !== logId);
+      localStorage.setItem('edupulse_mentee_logs', JSON.stringify(filtered));
+      return filtered;
+    });
+    deleteMenteeLogFromCloud(logId);
+  };
+
   useEffect(() => {
     if (currentRole === 'educator' && (activeTab === 'mentor' || activeTab === 'ai-analysis')) {
       setActiveTab('home');
@@ -999,11 +1061,14 @@ export default function App() {
             currentMentor={currentMentor}
             mentors={mentors}
             teacherUpdates={teacherUpdates}
+            menteeLogs={menteeLogs}
             userEmail={userEmail}
             currentRole={currentRole}
             onMarkUpdateRead={handleMarkUpdateRead}
             onUpdateNotes={handleUpdateNotes}
             onBulkUpdateMarks={handleBulkUpdateMarks}
+            onSaveMenteeLogs={handleSaveMenteeLogs}
+            onDeleteMenteeLog={handleDeleteMenteeLog}
             onNavigate={(tab, studentId) => handleNavigateWithStudent(tab, studentId)}
             onOpenAddMentee={() => setIsAddMenteeOpen(true)}
             onOpenEditProfile={() => setIsEditProfileOpen(true)}
