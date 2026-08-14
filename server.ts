@@ -11,7 +11,14 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+  // Ensure persistent uploads directory exists
+  const UPLOAD_DIR = path.join(process.cwd(), 'uploads');
+  if (!fs.existsSync(UPLOAD_DIR)) {
+    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+  }
 
   // Helper to dynamically obtain Google GenAI client
   function getGenAIClient() {
@@ -222,6 +229,84 @@ async function startServer() {
     res.json({ resources: cloudDbResources });
   });
 
+  // Dedicated Resource File Upload endpoint
+  app.post('/api/upload-resource-file', (req, res) => {
+    try {
+      const { fileName, fileData, fileType } = req.body;
+      if (!fileName || !fileData) {
+        return res.status(400).json({ error: 'File name and file data are required' });
+      }
+
+      const sanitizedName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const fileId = `file_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      const savedFileName = `${fileId}_${sanitizedName}`;
+      const filePath = path.join(UPLOAD_DIR, savedFileName);
+
+      // Extract base64 content
+      let base64Data = fileData;
+      if (fileData.includes(',')) {
+        base64Data = fileData.split(',')[1];
+      }
+
+      const buffer = Buffer.from(base64Data, 'base64');
+      fs.writeFileSync(filePath, buffer);
+
+      const fileUrl = `/api/resource-files/${savedFileName}`;
+      const sizeBytes = buffer.length;
+      const fileSize = sizeBytes < 1024 * 1024 
+        ? `${(sizeBytes / 1024).toFixed(1)} KB` 
+        : `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+
+      return res.json({
+        success: true,
+        fileUrl,
+        fileName: sanitizedName,
+        fileSize,
+        fileId,
+      });
+    } catch (err: any) {
+      console.error('File upload error:', err);
+      return res.status(500).json({ error: 'Failed to save file on server' });
+    }
+  });
+
+  // Direct Resource File download & inline viewer endpoint
+  app.get('/api/resource-files/:fileName', (req, res) => {
+    const { fileName } = req.params;
+    const sanitizedName = path.basename(fileName);
+    const filePath = path.join(UPLOAD_DIR, sanitizedName);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).send('File not found');
+    }
+
+    const ext = path.extname(sanitizedName).toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      '.pdf': 'application/pdf',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.doc': 'application/msword',
+      '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      '.ppt': 'application/vnd.ms-powerpoint',
+      '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      '.xls': 'application/vnd.ms-excel',
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.webp': 'image/webp',
+      '.txt': 'text/plain',
+      '.csv': 'text/csv',
+    };
+
+    const contentType = mimeTypes[ext] || 'application/octet-stream';
+    res.setHeader('Content-Type', contentType);
+    const originalName = sanitizedName.replace(/^file_[^_]+_/, '');
+    res.setHeader('Content-Disposition', `inline; filename="${originalName}"`);
+
+    const stream = fs.createReadStream(filePath);
+    stream.pipe(res);
+  });
+
   app.post('/api/resources', (req, res) => {
     const resource = req.body;
     if (!resource || !resource.id) {
@@ -239,6 +324,18 @@ async function startServer() {
 
   app.delete('/api/resources/:id', (req, res) => {
     const { id } = req.params;
+    const item = cloudDbResources.find((r) => r.id === id);
+    if (item && item.fileUrl && item.fileUrl.startsWith('/api/resource-files/')) {
+      const fileName = path.basename(item.fileUrl);
+      const filePath = path.join(UPLOAD_DIR, fileName);
+      if (fs.existsSync(filePath)) {
+        try {
+          fs.unlinkSync(filePath);
+        } catch (e) {
+          console.warn('Failed to delete file from disk:', e);
+        }
+      }
+    }
     cloudDbResources = cloudDbResources.filter((r) => r.id !== id);
     persistDataStore();
     res.json({ success: true, resources: cloudDbResources });

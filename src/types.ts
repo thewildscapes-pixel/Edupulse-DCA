@@ -180,3 +180,19 @@ export interface WhatsAppTemplate {
   templateText: string;
   messageBody?: string;
 }
+
+export interface ResourceItem {
+  id: string;
+  title: string;
+  category: string;
+  department: string;
+  fileType: string;
+  description: string;
+  author: string;
+  uploadedByMentorId: string;
+  dateAdded: string;
+  fileUrl?: string;
+  fileName?: string;
+  fileSize?: string;
+}
+
